@@ -1,0 +1,291 @@
+groups:
+- name: (( concat "build-" meta.pipeline "-releases" ))
+  jobs:
+  - testflight
+  - rc
+  - shipit
+- name: versioning
+  jobs:
+  - major
+  - minor
+  - patch
+- name: upstream-blobs
+  jobs:
+  - (( grab meta.source ))
+
+meta:
+  name:     (( param "Please name your pipeline" ))
+  release:  (( concat meta.name " Release" ))
+  target:   (( param "Please identify the name of the target Concourse CI" ))
+  pipeline: (( grab meta.name ))
+  url:      (( param "What is the URL for the Concourse instance this pipeline is located on?" ))
+
+  git:
+    email:  (( param "Please provide the git email for automated commits" ))
+    name:   (( param "Please provide the git name for automated commits" ))
+
+  github:
+    uri:          (( concat "git@github.com:" meta.github.owner "/" meta.github.repo ))
+    owner:        (( param "Please specify the name of the user / organization that owns the Github repository" ))
+    repo:         (( param "Please specify the name of the Github repository" ))
+    branch:       develop
+    access_token: (( param "Please generate a Personal Access Token and specify it here" ))
+    release_notes:
+      repo:       "ci-release-notes"
+      branch:     "main"
+      file:       (( concat meta.name "-release-notes.md" ))
+      uri:        (( concat "git@github.com:"  meta.github.owner "/" meta.github.release_notes.repo ))
+      edit:       (( concat "https://github.com/" meta.github.owner "/"  meta.github.release_notes.repo "/edit/"  meta.github.release_notes.branch "/" meta.github.release_notes.file ))
+
+  aws:
+    bucket:      (( concat meta.pipeline "-pipeline" ))
+    region_name: us-east-1
+    access:      (( param "Please set your AWS Access Key ID" ))
+    secret:      (( param "Please set your AWS Secret Key ID" ))
+
+jobs:
+- name: testflight
+  public: true
+  serial: true
+  plan:
+  - get: git
+    trigger: true
+  - task: testflight
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: git
+      run:
+        path: ./git/ci/scripts/testflight
+        args: []
+      params:
+        REPO_ROOT:            git
+        BOSH_ENV:             ((bosh
+        BOSH_ENVIRONMENT:     (( grab meta.bosh.url ))
+        BOSH_CA_CERT:         (( grab meta.bosh.ca ))
+        BOSH_CLIENT:          (( grab meta.bosh.username ))
+        BOSH_CLIENT_SECRET:   (( grab meta.bosh.password ))
+        CREDHUB_URL:          (( grab meta.credhub.url ))
+        CREDHUB_CA_CERT:      (( grab meta.credhub.ca ))
+        CREDHUB_CLIENT:       (( grab meta.credhub.username ))
+        CREDHUB_SECRET:       (( grab meta.credhub.password ))
+        BOSH_DEPLOYMENT:      (( concat meta.source "-ci" ))
+        TEST_ERRANDS:         ~
+        AWS_ACCESS_KEY:       (( grab meta.aws.access ))
+        AWS_SECRET_KEY:       (( grab meta.aws.secret ))
+        MANIFEST_PATH:        (( concat "manifests/" meta.source ".yml" ))
+        MANIFEST_VARS:        "--- {}"
+        MANIFEST_OP_PATHS:    ""
+
+- name: rc
+  public: true
+  serial: true
+  plan:
+  - in_parallel:
+    - get: git
+      trigger: true
+      passed: [testflight]
+    - get: version
+      trigger: false
+      params:
+        pre: rc
+  - task: release-notes
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: git
+      run:
+        path: sh
+        args:
+        - -ce
+        - |
+          cd git
+          if [ -f ci/release_notes.md ]; then
+            echo "######   RELEASE NOTES   ###############"
+            echo
+            cat ci/release_notes.md
+            echo
+            echo "########################################"
+            echo
+          else
+            echo "NO RELEASE NOTES HAVE BEEN WRITTEN"
+            echo "You *might* want to do that before"
+            echo "hitting (+) on that shipit job..."
+            echo
+          fi
+  - put: version
+    params:
+      file: version/number
+
+- name: shipit
+  public: true
+  serial: true
+  plan:
+  - in_parallel:
+    - get: version
+      passed: [rc]
+      params:
+        bump: final
+    - get: git
+      passed: [rc]
+  - task: release
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: version
+      - name: git
+      outputs:
+      - name: gh
+      - name: pushme
+      - name: notifications
+      run:
+        path: ./git/ci/scripts/shipit
+        args: []
+      params:
+        REPO_ROOT:    git
+        VERSION_FROM: version/number
+        RELEASE_ROOT: gh
+        REPO_OUT:     pushme
+        NOTIFICATION_OUT: notifications
+        BRANCH:         main
+        GITHUB_OWNER:   (( grab meta.github.owner ))
+        GIT_EMAIL:      (( grab meta.git.email ))
+        GIT_NAME:       (( grab meta.git.name ))
+        AWS_ACCESS_KEY: (( grab meta.aws.access ))
+        AWS_SECRET_KEY: (( grab meta.aws.secret ))
+
+  - put: upload-git
+    resource: git
+    params:
+      rebase: true
+      repository: pushme
+  - put: github-release
+    resource: (( grab meta.name ))
+    params:
+      name:   gh/name
+      tag:    gh/tag
+      body:   gh/notes.md
+      globs: [gh/artifacts/*]
+  - put: version-bump-patch
+    resource: version
+    params:
+      bump: patch
+
+- name: patch
+  public: true
+  plan:
+  - get: version
+    params:
+      bump: patch
+  - put: version
+    params:
+      file: version/number
+
+- name: minor
+  public: true
+  plan:
+  - do:
+    - get: version
+      params:
+        bump: minor
+    - put: version
+      params:
+        file: version/number
+
+- name: major
+  public: true
+  plan:
+  - get: version
+    params:
+      bump: major
+  - put: version
+    params:
+      file: version/number
+
+
+- name: (( grab meta.source ))
+  public: true
+  plan:
+  - in_parallel:
+    - get: git
+    - get: (( grab meta.source ))
+      trigger: true
+      params:
+        globs: [ (( concat meta.source "-*-linux-amd64" )) ]
+  - task: (( concat "update-" meta.source ))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: git
+      - name: (( grab meta.source ))
+      outputs:
+      - name: pushme
+      run:
+        path: ./git/ci/scripts/update-blob
+      params:
+        REPO_ROOT:        git
+        REPO_OUT:         pushme
+        BLOB_DIR:         (( grab meta.source ))
+        BLOB_NAME:        (( grab meta.source ))
+        BLOB_BINARY:      (( concat meta.source "-*-linux-amd64" ))
+        BLOB_DESTINATION: (( concat meta.source "/" meta.source ))
+        BLOB_CLEANUP:     (( concat meta.source "/" meta.source ))
+        GIT_NAME:         (( grab meta.git.name ))
+        GIT_EMAIL:        (( grab meta.git.email ))
+        AWS_ACCESS_KEY:   (( grab meta.aws.access ))
+        AWS_SECRET_KEY:   (( grab meta.aws.secret ))
+        BRANCH:           main
+  - put: git
+    params:
+      rebase: true
+      repository: pushme/git
+
+resources:
+- name: git
+  type: git
+  source:
+    uri:         (( concat "https://github.com/" meta.github.owner "/" meta.github.repo ".git" ))
+    branch:      (( grab meta.github.branch ))
+    username:    (( grab meta.github.username ))
+    password:    (( grab meta.github.access_token ))
+
+- name: version
+  type: semver
+  source:
+    driver:            s3
+    bucket:            (( grab meta.aws.bucket ))
+    region_name:       (( grab meta.aws.region_name ))
+    key:               (( concat meta.github.source-repo "/boshrelease-version" ))
+    access_key_id:     (( grab meta.aws.access ))
+    secret_access_key: (( grab meta.aws.secret ))
+    initial_version:   "1.2.0"
+
+- name: (( grab meta.name ))
+  type: github-release
+  source:
+    user:         (( grab meta.github.owner ))
+    repository:   (( grab meta.github.repo ))
+    access_token: (( grab meta.github.access_token ))
+
+- name: (( grab meta.source ))
+  type: github-release
+  source:
+    user:         (( grab meta.github.owner ))
+    repository:   (( grab meta.github.source-repo ))
+    access_token: (( grab meta.github.access_token ))
