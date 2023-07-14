@@ -4,7 +4,7 @@ set -e
 
 # Prepare PATH with known bin directories.
 export PATH=$PATH:/var/vcap/packages/cf-cli-8-linux/bin
-export PATH=$PATH:/var/vcap/packages/golang-1.18-linux/bin
+export PATH=$PATH:/var/vcap/packages/golang-1.20-linux/bin
 
 echo "==="
 echo "Setting up CF CLI environment..."
@@ -44,7 +44,7 @@ yes | cf install-plugin /var/vcap/packages/scheduler-cf-plugin/bin/scheduler-cf-
 
 echo "==="
 echo "Preparing Go runtime environment..."
-source /var/vcap/packages/golang-1.18-linux/bosh/runtime.env
+source /var/vcap/packages/golang-1.20-linux/bosh/runtime.env
 export CGO_ENABLED=0
 
 echo "==="
