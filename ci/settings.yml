@@ -1,0 +1,37 @@
+---
+meta:
+  name:    (( concat meta.source "-boshrelease" ))
+  source:  ocf-scheduler
+  release: OCF Scheduler Bosh Release
+  target:  pipes/cloudfoundry-community
+  url:     https://pipes.scalecf.com
+
+  bosh:
+    url:      ((thunder-dome.url))
+    username: ((thunder-dome.username))
+    password: ((thunder-dome.password))
+    ca:       ((thunder-dome.ca-certificate))
+
+  credhub:
+    url:      ((thunder-dome-credhub.url))
+    username: ((thunder-dome-credhub.username))
+    password: ((thunder-dome-credhub.password))
+    ca:       ((thunder-dome-credhub.ca-certificate))
+
+  aws:
+    bucket:   ((concat meta.source "-pipeline" ))
+    access:   ((aws.access_key_id))
+    secret:   ((aws.secret_access_key))
+
+  git:
+    name:         ((github.name))
+    email:        ((github.email))
+
+  github:
+    owner:        cloudfoundry-community
+    source-repo:  (( grab meta.source ))
+    repo:         (( grab meta.name ))
+    username:     ((github.username))
+    branch:       main
+    access_token: ((github.access_token_rw))
+
