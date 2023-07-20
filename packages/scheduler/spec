@@ -4,4 +4,4 @@ name: scheduler
 dependencies: []
 
 files: 
-  - ocf-scheduler/ocf-scheduler
+  - ocf-scheduler/ocf-scheduler-*-linux-amd64
