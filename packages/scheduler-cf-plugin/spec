@@ -2,4 +2,4 @@
 name: scheduler-cf-plugin
 
 files:
-- scheduler-cf-plugin/scheduler-cf-plugin-*-linux
+- ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*-linux-amd64
