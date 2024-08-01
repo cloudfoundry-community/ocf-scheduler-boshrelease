@@ -5,7 +5,7 @@ set -ex
 
 mkdir -p ${BOSH_INSTALL_TARGET}/bin
 
-cp ocf-scheduler/ocf-scheduler-*-linux-amd64 ${BOSH_INSTALL_TARGET}/bin/scheduler
+cp ocf-scheduler/ocf-scheduler ${BOSH_INSTALL_TARGET}/bin/scheduler
 
 chmod +x ${BOSH_INSTALL_TARGET}/bin/scheduler
 
