@@ -1,6 +1,6 @@
 name: ocf-scheduler
 version: 0.1.1
-commit_hash: d026cab
+commit_hash: 8c109e8
 uncommitted_changes: true
 jobs:
 - name: scheduler
