@@ -2,7 +2,7 @@
 name: smoke-tests
 
 dependencies:
-- golang-1.20-linux
+- golang-1.22-linux
 - cf-cli-8-linux
 - scheduler-cf-plugin
 

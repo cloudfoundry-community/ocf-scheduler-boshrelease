@@ -1,6 +1,6 @@
 module github.com/starkandwayne/ocf-scheduler-boshrelease/src/acceptance-tests
 
-go 1.18
+go 1.22
 
 require (
 	github.com/cloudfoundry/cf-acceptance-tests v1.9.1-0.20220405181007-a6e4d7ae3b33
