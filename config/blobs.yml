@@ -2,7 +2,15 @@ ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-1.0.0-linux-amd64:
   size: 8564813
   object_id: f606f400-023d-4f79-4637-53b2619e822c
   sha: sha256:f99b37f8c3eef60ca2761d607f6d8a9adc47cbff5ca8b85ed399eb9674a5161a
+ocf-scheduler/ocf-scheduler-0.1.0-linux-amd64:
+  size: 7110656
+  object_id: e44a7d1d-eb0c-4c6a-52f7-58d3a011bd87
+  sha: sha256:fc8e5f71074176a6e00a7002c9cfb459f477445a86b13cf24a8af2f6947b810a
 ocf-scheduler/ocf-scheduler:
   size: 10768079
   object_id: ea5da087-e1a2-42b1-5d33-1be8215a4e5c
   sha: sha256:96348cd8959c980d79d4b7620cf9efc75879a5c86a96f1929c6eb2b095719321
+ocf-scheduler/scheduler-linux-amd64-2.0.0.tar.gz:
+  size: 8930201
+  object_id: 25ca737c-5102-46f5-5321-c7ab87b9ac3a
+  sha: sha256:5a2d751c3b547c9a7da81e16709e5ccdcfc243f068cdccd92bcf81bb53e95cad
