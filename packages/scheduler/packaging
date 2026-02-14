@@ -1,11 +1,16 @@
 #!/bin/bash
 
-set -ex
+set -e
 
+# ocf-scheduler/scheduler-linux-amd64-2.0.0.tar.gz
+GOOS=linux
+GOARCH=amd64
+VERSION=2.0.0
 
 mkdir -p ${BOSH_INSTALL_TARGET}/bin
 
-cp ocf-scheduler/ocf-scheduler-*-linux-amd64 ${BOSH_INSTALL_TARGET}/bin/scheduler
+tar -xzf ocf-scheduler/scheduler-${GOOS}-${GOARCH}-${VERSION}.tar.gz --strip-components=1 -C ${BOSH_INSTALL_TARGET}/bin \
+   ${GOOS}-${GOARCH}-${VERSION}/scheduler ${GOOS}-${GOARCH}-${VERSION}/tzlist
 
-chmod +x ${BOSH_INSTALL_TARGET}/bin/scheduler
+chmod +x ${BOSH_INSTALL_TARGET}/bin/scheduler ${BOSH_INSTALL_TARGET}/bin/tzlist
 
