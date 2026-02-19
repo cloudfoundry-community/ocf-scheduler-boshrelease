@@ -19,10 +19,9 @@ properties:
     description: "Target CF API Endpoint"
   scheduler.postgres.uri:
     description: "Postgres URI (eg. postgres://user:pass@host:port/db...)"
-  scheduler.worker_count:
-    description: "Number of worker processes to run"
+  scheduler.workers:
     default: 20
+    description: "Number of scheduling workers"
   scheduler.log_level:
     description: "Log level"
     default: "info"
-

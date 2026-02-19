@@ -6,3 +6,11 @@ ocf-scheduler/ocf-scheduler:
   size: 10768079
   object_id: ea5da087-e1a2-42b1-5d33-1be8215a4e5c
   sha: sha256:96348cd8959c980d79d4b7620cf9efc75879a5c86a96f1929c6eb2b095719321
+ocf-scheduler/ocf-scheduler-0.1.0-linux-amd64:
+  size: 7110656
+  object_id: e44a7d1d-eb0c-4c6a-52f7-58d3a011bd87
+  sha: sha256:fc8e5f71074176a6e00a7002c9cfb459f477445a86b13cf24a8af2f6947b810a
+ocf-scheduler/scheduler-linux-amd64-2.0.0.tar.gz:
+  size: 8933736
+  object_id: b1d40bb1-3f88-418a-61a0-cbdd7ae0d0a2
+  sha: sha256:844446db21b138e61693f39a74ec4bdffe2d7537ccc5014473d1dc08f70e61db

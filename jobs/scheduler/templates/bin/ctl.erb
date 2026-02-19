@@ -2,8 +2,10 @@
 
 LOG_FILE=/var/vcap/sys/log/scheduler/scheduler.log 
 DATA_PATH=/var/vcap/data/scheduler
+STORE_PATH=/var/vcap/store/scheduler
 JOB_PATH=/var/vcap/jobs/scheduler
 SCHEDULER_PID=/var/vcap/sys/run/scheduler.pid
+TIMEZONE_PATH="${STORE_PATH}/scheduler-timezones.json"
 
 cd ${JOB_PATH}
 
@@ -13,6 +15,11 @@ case $1 in
   (start)
     echo -n "Starting Scheduler PID: $$"
     echo $$ > $SCHEDULER_PID
+    [ -f "${TIMEZONE_PATH}" ] || {
+      touch "${TIMEZONE_PATH}" && chown "vcap:vcap" "${TIMEZONE_PATH}";
+    }
+
+    chpst -u vcap:vcap /var/vcap/packages/scheduler/bin/tzlist --json >> ${LOG_FILE} 2>&1 
     exec chpst -u vcap:vcap /var/vcap/packages/scheduler/bin/scheduler \
       >> ${LOG_FILE} 2>&1 
     ;;
