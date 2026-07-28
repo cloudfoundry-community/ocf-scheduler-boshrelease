@@ -119,6 +119,15 @@ check "all four assets added" "4" \
   "$(grep -c '^add-blob' "$box/calls" 2>/dev/null || true)"
 rm -rf "$box"
 
+# Concourse's github-release resource writes a `version` file beside the
+# assets. FROM mode must read it rather than demanding a REF.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+echo "2.0.1" > "$box/in/version"
+check "version derived from FROM dir" "2.0.1" \
+  "$(cd "$box" && "$BLOBS" dir-version "$box/in")"
+rm -rf "$box"
+
 echo
 if (( fails > 0 )); then
   echo "${fails} failure(s)"
