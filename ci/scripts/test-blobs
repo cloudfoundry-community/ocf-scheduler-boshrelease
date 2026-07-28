@@ -58,6 +58,58 @@ check "missing darwin warns only" "0" \
   "$("$BLOBS" verify ocf-scheduler "$scratch/in" 2.0.1 >/dev/null 2>&1; echo $?)"
 rm -rf "$scratch"
 
+# --- install ---------------------------------------------------------------
+#
+# Runs offline: a stub `bosh` on PATH records calls instead of reaching S3.
+# spruce and jq are the real ones.
+
+mk_sandbox() {  # mk_sandbox -> prints sandbox dir
+  local d; d=$(mktemp -d)
+  cp "${HERE}/../../blobs.mk" "$d/blobs.mk"
+  mkdir -p "$d/config" "$d/stub" "$d/in"
+  echo '{}' > "$d/config/blobs.yml"
+  : > "$d/calls"
+  cat > "$d/stub/bosh" <<'EOF'
+#!/bin/sh
+echo "$@" >> "${BOSH_CALL_LOG:?}"
+exit 0
+EOF
+  chmod +x "$d/stub/bosh"
+  echo "$d"
+}
+
+seed_scheduler_assets() {  # seed_scheduler_assets <dir> <version>
+  local d=$1 v=$2 p
+  for p in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+    : > "$d/ocf-scheduler-$p-$v.tar.gz"
+  done
+}
+
+# A pre-existing private.yml is the operator's own credentials file. It
+# must be used as-is and must survive, including when the run fails.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+printf 'operator-owned\n' > "$box/config/private.yml"
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "pre-existing private.yml survives" "yes" \
+  "$([[ -f "$box/config/private.yml" ]] && echo yes || echo no)"
+check "pre-existing private.yml unmodified" "operator-owned" \
+  "$(cat "$box/config/private.yml" 2>/dev/null)"
+rm -rf "$box"
+
+# One we created ourselves is ephemeral and must be cleaned up.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    AWS_ACCESS_KEY=k AWS_SECRET_KEY=s \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "generated private.yml removed" "no" \
+  "$([[ -f "$box/config/private.yml" ]] && echo yes || echo no)"
+check "all four assets added" "4" \
+  "$(grep -c '^add-blob' "$box/calls" 2>/dev/null || true)"
+rm -rf "$box"
+
 echo
 if (( fails > 0 )); then
   echo "${fails} failure(s)"
