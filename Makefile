@@ -23,5 +23,11 @@ test:
 blobs: $(addprefix blobs-,$(UPSTREAMS))
 
 $(addprefix blobs-,$(UPSTREAMS)): blobs-%:
-	@test -n "$(FROM)" || { echo "FROM=<dir> required (REF/URL land in a later task)"; exit 2; }
+ifneq ($(FROM),)
 	./ci/scripts/blobs install $* "$(FROM)" "$$(./ci/scripts/blobs normalize $(REF))"
+else ifneq ($(URL),)
+	@test -n "$(REF)" || { echo "URL= also needs REF= to name the version"; exit 2; }
+	./ci/scripts/blobs fetch-url $* "$(URL)" "$$(./ci/scripts/blobs normalize $(REF))"
+else
+	./ci/scripts/blobs fetch $* $(REF)
+endif
