@@ -7,6 +7,7 @@ templates:
 
 packages:
 - scheduler
+- scheduler-cf-plugin
 
 properties: 
   scheduler.uaa.client_id:
