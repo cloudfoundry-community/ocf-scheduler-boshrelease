@@ -102,15 +102,37 @@ latest_tag() {  # latest_tag <source>
 # ephemeral, and only that one gets removed again.
 PRIVATE_YML_GENERATED=no
 
-write_private_yml() {
-  if [[ -f config/private.yml ]]; then
-    echo "using the existing config/private.yml"
-    PRIVATE_YML_GENERATED=no
-    return 0
-  fi
+# The same credentials Concourse resolves as ((aws.access_key_id)). Values
+# travel from safe into the file through a pipe: never as an argument, never
+# echoed, so they stay out of argv, shell history and any log.
+BLOBSTORE_VAULT_PATH="${BLOBSTORE_VAULT_PATH:-secret/concourse/cloudfoundry-community/aws}"
 
-  : "${AWS_ACCESS_KEY:?AWS_ACCESS_KEY required}"
-  : "${AWS_SECRET_KEY:?AWS_SECRET_KEY required}"
+write_from_vault() {
+  command -v safe >/dev/null || return 1
+  safe get --keys "$BLOBSTORE_VAULT_PATH" >/dev/null 2>&1 || return 1
+
+  echo "writing config/private.yml from ${BLOBSTORE_VAULT_PATH}"
+  {
+    echo "---"
+    echo "blobstore:"
+    echo "  provider: s3"
+    echo "  options:"
+    safe get "$BLOBSTORE_VAULT_PATH" \
+      | grep -E '^(access_key_id|secret_access_key):' \
+      | sed 's/^/    /'
+  } > config/private.yml
+
+  # A path that exists but holds the wrong keys yields a file with an
+  # empty options block, which bosh reports far less clearly than this.
+  grep -q 'access_key_id:' config/private.yml || {
+    rm -f config/private.yml
+    echo >&2 "${BLOBSTORE_VAULT_PATH} has no access_key_id/secret_access_key"
+    return 1
+  }
+}
+
+write_from_env() {
+  [[ -n "${AWS_ACCESS_KEY:-}" && -n "${AWS_SECRET_KEY:-}" ]] || return 1
   cat > config/private.yml <<EOF
 ---
 blobstore:
@@ -119,7 +141,25 @@ blobstore:
     access_key_id: ${AWS_ACCESS_KEY}
     secret_access_key: ${AWS_SECRET_KEY}
 EOF
-  PRIVATE_YML_GENERATED=yes
+}
+
+# Precedence: the operator's own file, then Vault, then the environment.
+write_private_yml() {
+  if [[ -f config/private.yml ]]; then
+    echo "using the existing config/private.yml"
+    PRIVATE_YML_GENERATED=no
+    return 0
+  fi
+
+  if write_from_vault || write_from_env; then
+    PRIVATE_YML_GENERATED=yes
+    return 0
+  fi
+
+  echo >&2 "no blobstore credentials: provide config/private.yml,"
+  echo >&2 "authenticate to Vault (safe auth ...), or set"
+  echo >&2 "AWS_ACCESS_KEY and AWS_SECRET_KEY"
+  return 1
 }
 
 drop_private_yml() {
