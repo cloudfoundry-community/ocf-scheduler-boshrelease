@@ -86,9 +86,18 @@ latest_tag() {  # latest_tag <source>
   gh release view --repo "$repo" --json tagName --jq .tagName
 }
 
-# Credentials reach bosh only through the gitignored private.yml, and
-# only for the lifetime of this function.
+# An operator may keep their own config/private.yml. That file is theirs:
+# use it as-is and never touch it. Only a file we generated ourselves is
+# ephemeral, and only that one gets removed again.
+PRIVATE_YML_GENERATED=no
+
 write_private_yml() {
+  if [[ -f config/private.yml ]]; then
+    echo "using the existing config/private.yml"
+    PRIVATE_YML_GENERATED=no
+    return 0
+  fi
+
   : "${AWS_ACCESS_KEY:?AWS_ACCESS_KEY required}"
   : "${AWS_SECRET_KEY:?AWS_SECRET_KEY required}"
   cat > config/private.yml <<EOF
@@ -99,6 +108,13 @@ blobstore:
     access_key_id: ${AWS_ACCESS_KEY}
     secret_access_key: ${AWS_SECRET_KEY}
 EOF
+  PRIVATE_YML_GENERATED=yes
+}
+
+drop_private_yml() {
+  [[ "$PRIVATE_YML_GENERATED" == "yes" ]] || return 0
+  rm -f config/private.yml
+  PRIVATE_YML_GENERATED=no
 }
 
 install() {  # install <source> <dir> <version>
@@ -108,7 +124,7 @@ install() {  # install <source> <dir> <version>
   verify "$src" "$dir" "$ver" || return 1
   blobdir=$(source_var "$src" BLOBDIR)
 
-  trap 'rm -f config/private.yml' EXIT
+  trap drop_private_yml EXIT
   write_private_yml
 
   # Drop every existing blob under this source's directory, so a bump
@@ -127,7 +143,7 @@ install() {  # install <source> <dir> <version>
   done
 
   bosh -n upload-blobs
-  rm -f config/private.yml
+  drop_private_yml
   trap - EXIT
 }
 
