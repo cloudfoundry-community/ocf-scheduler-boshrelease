@@ -94,6 +94,43 @@ test_scheduler_ambiguous() {
 }
 test_scheduler_ambiguous
 
+# --- scheduler-cf-plugin package -------------------------------------------
+
+mk_plugin_binaries() {  # mk_plugin_binaries <version> <destdir>
+  local ver=$1 dest=$2
+  mkdir -p "$dest"
+  local p
+  for p in linux.amd64 linux.arm64 darwin.amd64 darwin.arm64; do
+    printf '#!/bin/sh\necho plugin\n' > "$dest/ocf-scheduler-cf-plugin-$ver+$p"
+    : > "$dest/ocf-scheduler-cf-plugin-$ver+$p.sha1"
+  done
+  printf 'MZ\n' > "$dest/ocf-scheduler-cf-plugin-$ver+windows.amd64.exe"
+  : > "$dest/ocf-scheduler-cf-plugin-$ver+windows.amd64.sha1"
+}
+
+test_plugin() {  # test_plugin <machine> <arch> <version>
+  local machine=$1 arch=$2 ver=$3
+  local work install
+  work=$(mktemp -d); install=$(mktemp -d)
+  mk_plugin_binaries "$ver" "$work/ocf-scheduler-cf-plugin"
+  stub_uname "$machine" "$work"
+  ( cd "$work" \
+    && PATH="$work/stub:$PATH" BOSH_INSTALL_TARGET="$install" \
+       bash "$HERE/packages/scheduler-cf-plugin/packaging" >/dev/null )
+  check "plugin binary installed ($machine)" "yes" \
+        "$([[ -x "$install/bin/scheduler-cf-plugin" ]] && echo yes || echo no)"
+  check "all platforms served ($machine)"    "5" \
+        "$(find "$install/dist" -type f ! -name '*.sha1' | wc -l | tr -d ' ')"
+  check "no sha1 sidecars served ($machine)" "0" \
+        "$(find "$install/dist" -name '*.sha1' | wc -l | tr -d ' ')"
+  check "windows exe served ($machine)"      "1" \
+        "$(find "$install/dist" -name '*+windows.amd64.exe' | wc -l | tr -d ' ')"
+  rm -rf "$work" "$install"
+}
+
+test_plugin x86_64  amd64 1.2.0
+test_plugin aarch64 arm64 1.2.0
+
 echo
 if (( fails > 0 )); then
   echo "${fails} failure(s)"

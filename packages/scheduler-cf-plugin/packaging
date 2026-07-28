@@ -1,9 +1,29 @@
 #!/bin/bash
 
-set -ex
+set -eu
 
-mkdir -p ${BOSH_INSTALL_TARGET}/bin
+case "$(uname -m)" in
+  x86_64)        arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo >&2 "unsupported architecture: $(uname -m)"; exit 1 ;;
+esac
 
-cp ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*-linux-amd64 ${BOSH_INSTALL_TARGET}/bin/scheduler-cf-plugin
+# Role 1: the native binary, executed by the smoke-tests errand.
+set -- ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*+linux.${arch}
+if [ $# -ne 1 ] || [ ! -f "$1" ]; then
+  echo >&2 "expected exactly one linux/${arch} plugin blob, found $#"
+  exit 1
+fi
 
-chmod +x ${BOSH_INSTALL_TARGET}/bin/scheduler-cf-plugin
+mkdir -p "${BOSH_INSTALL_TARGET}/bin"
+cp "$1" "${BOSH_INSTALL_TARGET}/bin/scheduler-cf-plugin"
+chmod +x "${BOSH_INSTALL_TARGET}/bin/scheduler-cf-plugin"
+
+# Role 2: every platform, kept under its published name so that
+# {os}.{arch} stays parseable by whatever serves these.
+mkdir -p "${BOSH_INSTALL_TARGET}/dist"
+for binary in ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*; do
+  [ -f "$binary" ] || continue
+  case "$binary" in *.sha1|*.sha256) continue ;; esac
+  cp "$binary" "${BOSH_INSTALL_TARGET}/dist/"
+done
