@@ -171,6 +171,37 @@ install() {  # install <source> <dir> <version>
   trap - EXIT
 }
 
+# URL mode's escape hatch: add exactly one asset, leaving the sibling
+# platforms' blobs alone. Going through install() would first drop every
+# blob for the source, stripping a release down to whatever single file
+# the URL happened to point at.
+install_one() {  # install_one <source> <file>
+  local src="${1:?}" file="${2:?}" blobdir name
+
+  [[ -f "$file" ]] || { echo >&2 "no such asset: $file"; return 1; }
+
+  blobdir=$(source_var "$src" BLOBDIR)
+  [[ -n "${blobdir// }" ]] || {
+    echo >&2 "unknown source '$src' (no BLOBDIR declared in blobs.mk)"
+    return 1
+  }
+  name=$(basename "$file")
+
+  trap drop_private_yml EXIT
+  write_private_yml
+
+  # Replace only this exact blob, if it is already present.
+  if spruce json config/blobs.yml | jq -e \
+      --arg k "${blobdir}/${name}" 'has($k)' >/dev/null; then
+    bosh remove-blob "${blobdir}/${name}"
+  fi
+
+  bosh add-blob "$file" "${blobdir}/${name}"
+  bosh -n upload-blobs
+  drop_private_yml
+  trap - EXIT
+}
+
 fetch() {  # fetch <source> [<ref>]
   local src="${1:?}" ref="${2:-}" tag ver dir
   command -v gh >/dev/null || { echo >&2 "gh is required for REF mode"; exit 2; }
@@ -193,12 +224,12 @@ fetch() {  # fetch <source> [<ref>]
   rm -rf "$dir"
 }
 
-fetch_url() {  # fetch_url <source> <url> <version>
-  local src="${1:?}" url="${2:?}" ver="${3:?}" dir
+fetch_url() {  # fetch_url <source> <url>
+  local src="${1:?}" url="${2:?}" dir
   dir=$(mktemp -d)
   echo "fetching $url into $dir"
   curl -fsSL -o "$dir/$(basename "$url")" "$url"
-  install "$src" "$dir" "$ver"
+  install_one "$src" "$dir/$(basename "$url")"
   rm -rf "$dir"
 }
 
@@ -210,11 +241,23 @@ main() {
     asset-name)  asset_name "$@" ;;
     dir-version) dir_version "$@" ;;
     verify)      verify "$@" ;;
-    install)    install "$@" ;;
+    install)     install "$@" ;;
+    install-one) install_one "$@" ;;
     resolve-tag) resolve_tag "$@" ;;
-    fetch)     fetch "$@" ;;
-    fetch-url) fetch_url "$@" ;;
-    *) echo >&2 "usage: blobs normalize <ref>"; exit 2 ;;
+    fetch)       fetch "$@" ;;
+    fetch-url)   fetch_url "$@" ;;
+    *)
+      echo >&2 "usage: blobs <subcommand> [args]"
+      echo >&2 "  normalize <ref>                    strip a v- or v prefix"
+      echo >&2 "  asset-name <src> <ver> <os> <arch> build an asset filename"
+      echo >&2 "  dir-version <dir>                  read the version file"
+      echo >&2 "  verify <src> <dir> <ver>           check required platforms"
+      echo >&2 "  install <src> <dir> <ver>          replace a source's blobs"
+      echo >&2 "  install-one <src> <file>           add or replace one blob"
+      echo >&2 "  resolve-tag <src> <ref>            find the release tag"
+      echo >&2 "  fetch <src> [<ref>]                download a release"
+      echo >&2 "  fetch-url <src> <url>              download a single asset"
+      exit 2 ;;
   esac
 }
 
