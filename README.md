@@ -76,11 +76,15 @@ bosh run-errand smoke-tests
 
 | Package | Contents |
 |---|---|
-| `scheduler` | Pre-built OCF Scheduler Linux binary |
-| `scheduler-cf-plugin` | Pre-built OCF Scheduler CF CLI plugin |
-| `golang-1.20-linux` | Go toolchain (used by smoke-tests at runtime) |
+| `scheduler` | Pre-built scheduler and tzlist, linux amd64 and arm64 |
+| `scheduler-cf-plugin` | CF CLI plugin: the native binary, plus every published platform under `dist/` |
+| `scheduler-crossbuilds` | Darwin scheduler builds. Referenced by no job, so carried in the release but never compiled |
+| `golang-1.22-linux` | Go toolchain (used by smoke-tests at runtime) |
 | `cf-cli-8-linux` | CF CLI v8 (used by smoke-tests) |
 | `smoke-tests` | Go acceptance test source and vendored dependencies |
+
+The architecture is selected at compile time from `uname -m`, so one
+release deploys to both amd64 and arm64 stemcells.
 
 ## Development
 
@@ -93,9 +97,32 @@ bosh upload-release
 
 ### Updating Blobs
 
-The `ci/scripts/update-blob` script automates blob updates from upstream GitHub releases. It removes outdated blobs, adds the new version, and uploads to the blobstore.
+`make blobs` pins the upstream artifacts. The same targets are used by
+hand, by Concourse, and by GitHub Actions — run `make help` for the
+full list.
 
-`config/private.yml` must contain S3 credentials for blobstore access during final release creation:
+```shell
+make blobs                                  # every source, latest release
+make blobs-ocf-scheduler REF=v2.0.1         # one source, a specific tag
+make blobs-ocf-scheduler FROM=./downloaded  # assets already on disk
+```
+
+Both upstream tag schemes resolve: `v2.0.1`, `v-2.0.1`, and a bare
+`2.0.1` all find the same release. A missing linux asset is fatal; a
+missing darwin or windows asset warns and continues.
+
+Each bump removes that source's stale blobs, adds the new ones, uploads
+them, and commits the change.
+
+### Blobstore Credentials
+
+S3 credentials reach `bosh` only through `config/private.yml`, which is
+gitignored. Two ways to supply them:
+
+- **Keep your own `config/private.yml`.** It is used as-is and never
+  modified or removed.
+- **Set `AWS_ACCESS_KEY` and `AWS_SECRET_KEY`.** A temporary
+  `config/private.yml` is generated and deleted when the run finishes.
 
 ```yaml
 ---
