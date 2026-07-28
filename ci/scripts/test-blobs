@@ -107,6 +107,49 @@ check "pre-existing private.yml unmodified" "operator-owned" \
   "$(cat "$box/config/private.yml" 2>/dev/null)"
 rm -rf "$box"
 
+# With no file and no env vars, credentials come from Vault via safe.
+# The stub stands in for an authenticated safe; the values are fake.
+stub_safe() {  # stub_safe <dir>
+  cat > "$1/stub/safe" <<'EOF'
+#!/bin/sh
+# safe get --keys <path>   -> key names
+# safe get <path>          -> key: value YAML
+if [ "$2" = "--keys" ]; then
+  echo "access_key_id"; echo "secret_access_key"; exit 0
+fi
+echo "--- # $2"
+echo "access_key_id: FAKE-ACCESS-KEY"
+echo "secret_access_key: FAKE-SECRET-KEY"
+EOF
+  chmod +x "$1/stub/safe"
+}
+
+box=$(mk_sandbox)
+stub_safe "$box"
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    BLOBSTORE_VAULT_PATH=secret/fake/aws \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) > "$box/log" 2>&1
+check "vault used when no file or env" "yes" \
+  "$(grep -q 'config/private.yml from secret/fake/aws' "$box/log" && echo yes || echo no)"
+check "generated from vault is removed" "no" \
+  "$([[ -f "$box/config/private.yml" ]] && echo yes || echo no)"
+check "vault credentials never printed" "0" \
+  "$(grep -c 'FAKE-SECRET-KEY' "$box/log" 2>/dev/null || true)"
+rm -rf "$box"
+
+# An operator's own file still wins over Vault.
+box=$(mk_sandbox)
+stub_safe "$box"
+seed_scheduler_assets "$box/in" 2.0.1
+printf 'operator-owned\n' > "$box/config/private.yml"
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    BLOBSTORE_VAULT_PATH=secret/fake/aws \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "existing file beats vault" "operator-owned" \
+  "$(cat "$box/config/private.yml" 2>/dev/null)"
+rm -rf "$box"
+
 # One we created ourselves is ephemeral and must be cleaned up.
 box=$(mk_sandbox)
 seed_scheduler_assets "$box/in" 2.0.1
