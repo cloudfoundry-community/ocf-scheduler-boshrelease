@@ -58,6 +58,15 @@ check "missing darwin warns only" "0" \
   "$("$BLOBS" verify ocf-scheduler "$scratch/in" 2.0.1 >/dev/null 2>&1; echo $?)"
 rm -rf "$scratch"
 
+# An unknown source expands to empty REQUIRED/PLATFORMS lists. Both loops
+# would then run zero times and report success, so a genuinely missing
+# asset would pass. Empty must be fatal.
+scratch=$(mktemp -d)
+mkdir -p "$scratch/in"
+check_fails "unknown source is fatal" \
+  "$BLOBS" verify no-such-source "$scratch/in" 2.0.1
+rm -rf "$scratch"
+
 # --- install ---------------------------------------------------------------
 #
 # Runs offline: a stub `bosh` on PATH records calls instead of reaching S3.
