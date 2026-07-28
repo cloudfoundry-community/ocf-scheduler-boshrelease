@@ -1,16 +1,31 @@
 #!/bin/bash
 
-set -e
+set -eu
 
-# ocf-scheduler/scheduler-linux-amd64-2.0.0.tar.gz
-GOOS=linux
-GOARCH=amd64
-VERSION=2.0.0
+case "$(uname -m)" in
+  x86_64)        arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo >&2 "unsupported architecture: $(uname -m)"; exit 1 ;;
+esac
 
-mkdir -p ${BOSH_INSTALL_TARGET}/bin
+# Exactly one blob per architecture. A stale blob left by a failed bump
+# would otherwise glob two tarballs and silently pick one.
+set -- ocf-scheduler/ocf-scheduler-linux-${arch}-*.tar.gz
+if [ $# -ne 1 ] || [ ! -f "$1" ]; then
+  echo >&2 "expected exactly one linux/${arch} blob, found $#"
+  exit 1
+fi
 
-tar -xzf ocf-scheduler/scheduler-${GOOS}-${GOARCH}-${VERSION}.tar.gz --strip-components=1 -C ${BOSH_INSTALL_TARGET}/bin \
-   ${GOOS}-${GOARCH}-${VERSION}/scheduler ${GOOS}-${GOARCH}-${VERSION}/tzlist
+# The tarball's inner directory carries the version, and is derivable
+# from the filename: ocf-scheduler-linux-amd64-2.0.1.tar.gz
+#                 ->              linux-amd64-2.0.1/
+inner=$(basename "$1" .tar.gz)
+inner=${inner#ocf-scheduler-}
 
-chmod +x ${BOSH_INSTALL_TARGET}/bin/scheduler ${BOSH_INSTALL_TARGET}/bin/tzlist
+mkdir -p "${BOSH_INSTALL_TARGET}/bin"
 
+tar -xzf "$1" --strip-components=1 -C "${BOSH_INSTALL_TARGET}/bin" \
+    "${inner}/scheduler" "${inner}/tzlist"
+
+chmod +x "${BOSH_INSTALL_TARGET}/bin/scheduler" \
+         "${BOSH_INSTALL_TARGET}/bin/tzlist"
