@@ -3,8 +3,8 @@ config/priv.yml
 config/private.yml
 releases/*.tgz
 dev_releases
-blobs
-.blobs
+/blobs
+/.blobs
 .idea
 .dev_builds
 .final_builds/jobs/**/*.tgz
