@@ -9,12 +9,17 @@ include blobs.mk
 .PHONY: help test blobs $(addprefix blobs-,$(UPSTREAMS))
 
 help:
-	@echo "make test                       run the test suites"
-	@echo "make blobs                      bump every upstream to latest"
-	@echo "make blobs-ocf-scheduler        bump one source"
-	@echo "  REF=v2.0.1 | REF=v-2.0.1 | REF=2.0.1"
-	@echo "  URL=https://...  explicit asset"
-	@echo "  FROM=<dir>       assets already on disk"
+	@echo "make test     run the test suites"
+	@echo "make blobs    bump every upstream to its latest release"
+	@echo
+	@echo "Per-source targets:"
+	@$(foreach u,$(UPSTREAMS),echo "  make blobs-$(u)";)
+	@echo
+	@echo "Modes, for a per-source target:"
+	@echo "  REF=v2.0.1     a release tag; v-2.0.1 and 2.0.1 also work"
+	@echo "  URL=https://.. one explicit asset, leaving siblings alone"
+	@echo "  FROM=<dir>     assets already on disk; reads <dir>/version"
+	@echo "  no argument    the latest release"
 
 test:
 	./ci/scripts/test-blobs
