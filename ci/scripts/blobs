@@ -40,9 +40,20 @@ EOF
 # Required platforms must be present; the rest warn and continue.
 verify() {  # verify <source> <dir> <version>
   local src="${1:?}" dir="${2:?}" ver="${3:?}"
-  local missing=0 plat os arch name
+  local missing=0 plat os arch name required platforms
 
-  for plat in $(source_var "$src" REQUIRED); do
+  required=$(source_var "$src" REQUIRED)
+  platforms=$(source_var "$src" PLATFORMS)
+
+  # An unknown source, a missing blobs.mk, or the wrong working directory
+  # all expand to empty lists. Both loops below would then run zero times
+  # and report success, turning a real failure into a silent no-op.
+  if [[ -z "${required// }" || -z "${platforms// }" ]]; then
+    echo >&2 "unknown source '$src' (no platforms declared in blobs.mk)"
+    return 1
+  fi
+
+  for plat in $required; do
     os=${plat%%/*}; arch=${plat##*/}
     name=$(asset_name "$src" "$ver" "$os" "$arch")
     if [[ ! -f "$dir/$name" ]]; then
@@ -51,8 +62,8 @@ verify() {  # verify <source> <dir> <version>
     fi
   done
 
-  for plat in $(source_var "$src" PLATFORMS); do
-    case " $(source_var "$src" REQUIRED) " in *" $plat "*) continue ;; esac
+  for plat in $platforms; do
+    case " $required " in *" $plat "*) continue ;; esac
     os=${plat%%/*}; arch=${plat##*/}
     name=$(asset_name "$src" "$ver" "$os" "$arch")
     [[ -f "$dir/$name" ]] || \
