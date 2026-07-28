@@ -128,6 +128,19 @@ drop_private_yml() {
   PRIVATE_YML_GENERATED=no
 }
 
+# The version Concourse's github-release resource records beside the
+# assets it downloaded. This is what keeps FROM mode dependency-free:
+# the pipeline hands over a directory and nothing else.
+dir_version() {  # dir_version <dir>
+  local dir="${1:?dir_version requires a directory}"
+  if [[ -f "$dir/version" ]]; then
+    normalize "$(tr -d '[:space:]' < "$dir/version")"
+    return 0
+  fi
+  echo >&2 "no version file in $dir - pass REF= to name the version"
+  return 1
+}
+
 install() {  # install <source> <dir> <version>
   local src="${1:?}" dir="${2:?}" ver="${3:?}"
   local blobdir plat os arch name stale
@@ -193,9 +206,10 @@ main() {
   local cmd="${1:-}"
   shift || true
   case "$cmd" in
-    normalize)  normalize "$@" ;;
-    asset-name) asset_name "$@" ;;
-    verify)     verify "$@" ;;
+    normalize)   normalize "$@" ;;
+    asset-name)  asset_name "$@" ;;
+    dir-version) dir_version "$@" ;;
+    verify)      verify "$@" ;;
     install)    install "$@" ;;
     resolve-tag) resolve_tag "$@" ;;
     fetch)     fetch "$@" ;;
