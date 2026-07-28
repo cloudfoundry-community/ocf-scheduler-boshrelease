@@ -28,8 +28,7 @@ ifneq ($(FROM),)
 	  "$$(if [ -n '$(REF)' ]; then ./ci/scripts/blobs normalize '$(REF)'; \
 	      else ./ci/scripts/blobs dir-version '$(FROM)'; fi)"
 else ifneq ($(URL),)
-	@test -n "$(REF)" || { echo "URL= also needs REF= to name the version"; exit 2; }
-	./ci/scripts/blobs fetch-url $* "$(URL)" "$$(./ci/scripts/blobs normalize $(REF))"
+	./ci/scripts/blobs fetch-url $* "$(URL)"
 else
 	./ci/scripts/blobs fetch $* $(REF)
 endif
