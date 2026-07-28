@@ -1,0 +1,29 @@
+#!/bin/bash
+#
+# ci/scripts/blobs
+#
+# Single mechanism for pinning upstream artifacts as BOSH blobs.
+# Invoked by the Makefile; used identically by humans and by CI.
+
+set -euo pipefail
+
+# Strip a 'v-' prefix before a plain 'v'. Reversed, the 'v' rule turns
+# 'v-2.0.1' into '-2.0.1', which downstream version parsing reads as a
+# prerelease separator and mislabels a GA release.
+normalize() {
+  local ref="${1:?normalize requires a ref}"
+  ref="${ref#v-}"
+  ref="${ref#v}"
+  echo "$ref"
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    normalize) normalize "$@" ;;
+    *) echo >&2 "usage: blobs normalize <ref>"; exit 2 ;;
+  esac
+}
+
+main "$@"

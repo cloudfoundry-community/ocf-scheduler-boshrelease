@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# ci/scripts/test-blobs
+#
+# Tests for ci/scripts/blobs helper subcommands.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BLOBS="${HERE}/blobs"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected '$2', got '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+# Ref normalization. 'v-' must be stripped before 'v'; reversed, the 'v'
+# rule leaves a leading '-' on a v- tag.
+check "bare version unchanged"  "2.0.1" "$("$BLOBS" normalize 2.0.1)"
+check "v prefix stripped"       "2.0.1" "$("$BLOBS" normalize v2.0.1)"
+check "v- prefix stripped"      "2.0.1" "$("$BLOBS" normalize v-2.0.1)"
+check "prerelease preserved"    "2.0.1-rc.1" "$("$BLOBS" normalize v2.0.1-rc.1)"
+check "v- with prerelease"      "2.0.1-rc.1" "$("$BLOBS" normalize v-2.0.1-rc.1)"
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} failure(s)"
+  exit 1
+fi
+echo "all tests passed"
