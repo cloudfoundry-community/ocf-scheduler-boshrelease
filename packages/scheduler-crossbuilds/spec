@@ -1,0 +1,8 @@
+---
+name: scheduler-crossbuilds
+
+dependencies: []
+
+files:
+  - ocf-scheduler/ocf-scheduler-darwin-amd64-*.tar.gz
+  - ocf-scheduler/ocf-scheduler-darwin-arm64-*.tar.gz
