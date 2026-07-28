@@ -19,6 +19,15 @@ check() {  # check <description> <expected> <actual>
   fi
 }
 
+check_fails() {  # check_fails <description> <command...>
+  if "${@:2}" >/dev/null 2>&1; then
+    echo "FAIL - $1: expected non-zero exit, got 0"
+    fails=$((fails + 1))
+  else
+    echo "ok   - $1"
+  fi
+}
+
 # Ref normalization. 'v-' must be stripped before 'v'; reversed, the 'v'
 # rule leaves a leading '-' on a v- tag.
 check "bare version unchanged"  "2.0.1" "$("$BLOBS" normalize 2.0.1)"
@@ -26,6 +35,28 @@ check "v prefix stripped"       "2.0.1" "$("$BLOBS" normalize v2.0.1)"
 check "v- prefix stripped"      "2.0.1" "$("$BLOBS" normalize v-2.0.1)"
 check "prerelease preserved"    "2.0.1-rc.1" "$("$BLOBS" normalize v2.0.1-rc.1)"
 check "v- with prerelease"      "2.0.1-rc.1" "$("$BLOBS" normalize v-2.0.1-rc.1)"
+
+# Asset-name construction must match upstream exactly.
+check "scheduler asset name" \
+  "ocf-scheduler-linux-amd64-2.0.1.tar.gz" \
+  "$("$BLOBS" asset-name ocf-scheduler 2.0.1 linux amd64)"
+check "plugin asset name" \
+  "ocf-scheduler-cf-plugin-1.2.0+linux.amd64" \
+  "$("$BLOBS" asset-name ocf-scheduler-cf-plugin 1.2.0 linux amd64)"
+check "plugin windows asset name" \
+  "ocf-scheduler-cf-plugin-1.2.0+windows.amd64.exe" \
+  "$("$BLOBS" asset-name ocf-scheduler-cf-plugin 1.2.0 windows amd64)"
+
+# A missing linux asset is fatal; a missing darwin asset warns.
+scratch=$(mktemp -d)
+mkdir -p "$scratch/in"
+: > "$scratch/in/ocf-scheduler-linux-amd64-2.0.1.tar.gz"
+check_fails "missing required linux/arm64 is fatal" \
+  "$BLOBS" verify ocf-scheduler "$scratch/in" 2.0.1
+: > "$scratch/in/ocf-scheduler-linux-arm64-2.0.1.tar.gz"
+check "missing darwin warns only" "0" \
+  "$("$BLOBS" verify ocf-scheduler "$scratch/in" 2.0.1 >/dev/null 2>&1; echo $?)"
+rm -rf "$scratch"
 
 echo
 if (( fails > 0 )); then

@@ -21,3 +21,7 @@ test:
 	./ci/scripts/test-packaging
 
 blobs: $(addprefix blobs-,$(UPSTREAMS))
+
+$(addprefix blobs-,$(UPSTREAMS)): blobs-%:
+	@test -n "$(FROM)" || { echo "FROM=<dir> required (REF/URL land in a later task)"; exit 2; }
+	./ci/scripts/blobs install $* "$(FROM)" "$$(./ci/scripts/blobs normalize $(REF))"

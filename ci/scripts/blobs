@@ -17,11 +17,104 @@ normalize() {
   echo "$ref"
 }
 
+# Read a per-source variable out of blobs.mk without duplicating the
+# table here. Make is the single source of truth for it.
+source_var() {  # source_var <source> <suffix>
+  local src="${1:?}" suffix="${2:?}"
+  make --no-print-directory -f - <<EOF
+include blobs.mk
+show:
+	@echo \$(${src}_${suffix})
+EOF
+}
+
+asset_name() {  # asset_name <source> <version> <os> <arch>
+  local src="${1:?}" ver="${2:?}" os="${3:?}" arch="${4:?}"
+  make --no-print-directory -f - <<EOF
+include blobs.mk
+show:
+	@echo \$(call ${src}_ASSET,${ver},${os},${arch})
+EOF
+}
+
+# Required platforms must be present; the rest warn and continue.
+verify() {  # verify <source> <dir> <version>
+  local src="${1:?}" dir="${2:?}" ver="${3:?}"
+  local missing=0 plat os arch name
+
+  for plat in $(source_var "$src" REQUIRED); do
+    os=${plat%%/*}; arch=${plat##*/}
+    name=$(asset_name "$src" "$ver" "$os" "$arch")
+    if [[ ! -f "$dir/$name" ]]; then
+      echo >&2 "missing required asset: $src $ver $plat ($name)"
+      missing=$((missing + 1))
+    fi
+  done
+
+  for plat in $(source_var "$src" PLATFORMS); do
+    case " $(source_var "$src" REQUIRED) " in *" $plat "*) continue ;; esac
+    os=${plat%%/*}; arch=${plat##*/}
+    name=$(asset_name "$src" "$ver" "$os" "$arch")
+    [[ -f "$dir/$name" ]] || \
+      echo >&2 "warning: $src $ver has no $plat asset ($name) - continuing"
+  done
+
+  (( missing == 0 ))
+}
+
+# Credentials reach bosh only through the gitignored private.yml, and
+# only for the lifetime of this function.
+write_private_yml() {
+  : "${AWS_ACCESS_KEY:?AWS_ACCESS_KEY required}"
+  : "${AWS_SECRET_KEY:?AWS_SECRET_KEY required}"
+  cat > config/private.yml <<EOF
+---
+blobstore:
+  provider: s3
+  options:
+    access_key_id: ${AWS_ACCESS_KEY}
+    secret_access_key: ${AWS_SECRET_KEY}
+EOF
+}
+
+install() {  # install <source> <dir> <version>
+  local src="${1:?}" dir="${2:?}" ver="${3:?}"
+  local blobdir plat os arch name stale
+
+  verify "$src" "$dir" "$ver" || return 1
+  blobdir=$(source_var "$src" BLOBDIR)
+
+  trap 'rm -f config/private.yml' EXIT
+  write_private_yml
+
+  # Drop every existing blob under this source's directory, so a bump
+  # never leaves two versions for one platform behind.
+  stale=$(spruce json config/blobs.yml | jq -r \
+    --arg d "${blobdir}/" 'keys[] | select(startswith($d))')
+  if [[ -n "$stale" ]]; then
+    echo "$stale" | xargs -L1 bosh remove-blob
+  fi
+
+  for plat in $(source_var "$src" PLATFORMS); do
+    os=${plat%%/*}; arch=${plat##*/}
+    name=$(asset_name "$src" "$ver" "$os" "$arch")
+    [[ -f "$dir/$name" ]] || continue
+    bosh add-blob "$dir/$name" "${blobdir}/${name}"
+  done
+
+  bosh -n upload-blobs
+  rm -f config/private.yml
+  trap - EXIT
+}
+
 main() {
   local cmd="${1:-}"
   shift || true
   case "$cmd" in
-    normalize) normalize "$@" ;;
+    normalize)  normalize "$@" ;;
+    asset-name) asset_name "$@" ;;
+    verify)     verify "$@" ;;
+    install)    install "$@" ;;
     *) echo >&2 "usage: blobs normalize <ref>"; exit 2 ;;
   esac
 }
