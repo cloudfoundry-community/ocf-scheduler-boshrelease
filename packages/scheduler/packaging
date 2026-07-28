@@ -11,7 +11,10 @@ esac
 # Exactly one blob per architecture. A stale blob left by a failed bump
 # would otherwise glob two tarballs and silently pick one.
 set -- ocf-scheduler/ocf-scheduler-linux-${arch}-*.tar.gz
-if [ $# -ne 1 ] || [ ! -f "$1" ]; then
+# An unmatched glob is left literal by the shell, so count only the
+# entries that are real files. Otherwise zero blobs reports as one.
+[ -f "$1" ] || set --
+if [ $# -ne 1 ]; then
   echo >&2 "expected exactly one linux/${arch} blob, found $#"
   exit 1
 fi

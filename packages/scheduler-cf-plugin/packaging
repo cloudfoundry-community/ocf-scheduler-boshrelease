@@ -10,7 +10,10 @@ esac
 
 # Role 1: the native binary, executed by the smoke-tests errand.
 set -- ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*+linux.${arch}
-if [ $# -ne 1 ] || [ ! -f "$1" ]; then
+# An unmatched glob is left literal by the shell, so count only the
+# entries that are real files. Otherwise zero blobs reports as one.
+[ -f "$1" ] || set --
+if [ $# -ne 1 ]; then
   echo >&2 "expected exactly one linux/${arch} plugin blob, found $#"
   exit 1
 fi

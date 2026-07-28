@@ -94,6 +94,22 @@ test_scheduler_ambiguous() {
 }
 test_scheduler_ambiguous
 
+# With no match at all, bash leaves the glob pattern literal, so a naive
+# count reports 1. The message must say zero, not "found 1".
+test_scheduler_missing() {
+  local work install out
+  work=$(mktemp -d); install=$(mktemp -d)
+  mkdir -p "$work/ocf-scheduler"
+  stub_uname x86_64 "$work"
+  out=$( cd "$work" \
+         && PATH="$work/stub:$PATH" BOSH_INSTALL_TARGET="$install" \
+            bash "$HERE/packages/scheduler/packaging" 2>&1 )
+  check "missing blob reports zero" "yes" \
+        "$(printf '%s' "$out" | grep -q 'found 0' && echo yes || echo no)"
+  rm -rf "$work" "$install"
+}
+test_scheduler_missing
+
 # --- scheduler-cf-plugin package -------------------------------------------
 
 mk_plugin_binaries() {  # mk_plugin_binaries <version> <destdir>
