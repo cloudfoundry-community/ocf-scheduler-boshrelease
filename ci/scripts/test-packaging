@@ -1,0 +1,102 @@
+#!/bin/bash
+#
+# ci/scripts/test-packaging
+#
+# Runs each package's packaging script against fabricated blobs and
+# asserts on the installed output. Packaging scripts run on a stemcell
+# with cwd set to the extracted blob root, so each case reproduces that.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected '$2', got '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+check_fails() {  # check_fails <description> <command...>
+  if "${@:2}" >/dev/null 2>&1; then
+    echo "FAIL - $1: expected non-zero exit, got 0"
+    fails=$((fails + 1))
+  else
+    echo "ok   - $1"
+  fi
+}
+
+# Put a fake `uname` earlier in PATH so both architectures are testable
+# from any host.
+stub_uname() {  # stub_uname <machine> <dir>
+  mkdir -p "$2/stub"
+  cat > "$2/stub/uname" <<EOF
+#!/bin/sh
+if [ "\$1" = "-m" ]; then echo "$1"; else exec /usr/bin/uname "\$@"; fi
+EOF
+  chmod +x "$2/stub/uname"
+}
+
+# Build a tarball matching the upstream scheduler layout:
+#   <os>-<arch>-<version>/{scheduler,tzlist} plus .sha1/.sha256 sidecars
+mk_scheduler_tarball() {  # mk_scheduler_tarball <os> <arch> <version> <destdir>
+  local os=$1 arch=$2 ver=$3 dest=$4 d
+  d=$(mktemp -d)
+  mkdir -p "$d/$os-$arch-$ver"
+  printf '#!/bin/sh\necho scheduler\n' > "$d/$os-$arch-$ver/scheduler"
+  printf '#!/bin/sh\necho tzlist\n'    > "$d/$os-$arch-$ver/tzlist"
+  : > "$d/$os-$arch-$ver/scheduler.sha1"
+  : > "$d/$os-$arch-$ver/scheduler.sha256"
+  : > "$d/$os-$arch-$ver/tzlist.sha1"
+  : > "$d/$os-$arch-$ver/tzlist.sha256"
+  mkdir -p "$dest"
+  (cd "$d" && tar -czf "$dest/ocf-scheduler-$os-$arch-$ver.tar.gz" "$os-$arch-$ver")
+  rm -rf "$d"
+}
+
+# --- scheduler package -----------------------------------------------------
+
+test_scheduler() {  # test_scheduler <machine> <arch> <version>
+  local machine=$1 arch=$2 ver=$3
+  local work install
+  work=$(mktemp -d); install=$(mktemp -d)
+  mk_scheduler_tarball linux "$arch" "$ver" "$work/ocf-scheduler"
+  stub_uname "$machine" "$work"
+  ( cd "$work" \
+    && PATH="$work/stub:$PATH" BOSH_INSTALL_TARGET="$install" \
+       bash "$HERE/packages/scheduler/packaging" >/dev/null )
+  check "scheduler installed ($machine)"  "yes" \
+        "$([[ -x "$install/bin/scheduler" ]] && echo yes || echo no)"
+  check "tzlist installed ($machine)"     "yes" \
+        "$([[ -x "$install/bin/tzlist" ]] && echo yes || echo no)"
+  check "no sha sidecars ($machine)"      "0" \
+        "$(find "$install" -name '*.sha*' | wc -l | tr -d ' ')"
+  rm -rf "$work" "$install"
+}
+
+test_scheduler x86_64  amd64 2.0.1
+test_scheduler aarch64 arm64 2.0.1
+
+# Two blobs for one arch must be rejected, not silently resolved.
+test_scheduler_ambiguous() {
+  local work install
+  work=$(mktemp -d); install=$(mktemp -d)
+  mk_scheduler_tarball linux amd64 2.0.1 "$work/ocf-scheduler"
+  mk_scheduler_tarball linux amd64 2.0.2 "$work/ocf-scheduler"
+  stub_uname x86_64 "$work"
+  check_fails "ambiguous blobs rejected" \
+    env -C "$work" PATH="$work/stub:$PATH" BOSH_INSTALL_TARGET="$install" \
+      bash "$HERE/packages/scheduler/packaging"
+  rm -rf "$work" "$install"
+}
+test_scheduler_ambiguous
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} failure(s)"
+  exit 1
+fi
+echo "all tests passed"
