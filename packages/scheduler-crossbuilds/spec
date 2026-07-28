@@ -3,6 +3,11 @@ name: scheduler-crossbuilds
 
 dependencies: []
 
+# Builds for platforms no stemcell provides. Carried in the release
+# tarball, never compiled, because no job depends on this package.
 files:
   - ocf-scheduler/ocf-scheduler-darwin-amd64-*.tar.gz
   - ocf-scheduler/ocf-scheduler-darwin-arm64-*.tar.gz
+  # Uncomment once upstream restores the windows target:
+  # cloudfoundry-community/ocf-scheduler#26
+  # - ocf-scheduler/ocf-scheduler-windows-amd64-*.tar.gz
