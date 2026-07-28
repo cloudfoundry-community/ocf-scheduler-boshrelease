@@ -110,6 +110,26 @@ test_scheduler_missing() {
 }
 test_scheduler_missing
 
+# --- scheduler-crossbuilds package -----------------------------------------
+
+# Carried payload. No job references it, so it is never compiled on a
+# stemcell, but it must still install correctly if one ever does.
+test_crossbuilds() {
+  local work install
+  work=$(mktemp -d); install=$(mktemp -d)
+  mk_scheduler_tarball darwin amd64 2.0.1 "$work/ocf-scheduler"
+  mk_scheduler_tarball darwin arm64 2.0.1 "$work/ocf-scheduler"
+  mk_scheduler_tarball linux  amd64 2.0.1 "$work/ocf-scheduler"
+  ( cd "$work" && BOSH_INSTALL_TARGET="$install" \
+      bash "$HERE/packages/scheduler-crossbuilds/packaging" >/dev/null )
+  check "both darwin builds carried" "2" \
+        "$(find "$install/dist" -name 'ocf-scheduler-darwin-*' | wc -l | tr -d ' ')"
+  check "linux build not carried" "0" \
+        "$(find "$install/dist" -name 'ocf-scheduler-linux-*' | wc -l | tr -d ' ')"
+  rm -rf "$work" "$install"
+}
+test_crossbuilds
+
 # --- scheduler-cf-plugin package -------------------------------------------
 
 mk_plugin_binaries() {  # mk_plugin_binaries <version> <destdir>
