@@ -56,18 +56,23 @@ bosh deployments
 header "cf api endpoint"
 found=no
 for dep in $(bosh deployments --column=name 2>/dev/null | tr -d '[:blank:]'); do
-  releases=$(bosh -d "$dep" manifest 2>/dev/null \
-             | spruce json 2>/dev/null \
-             | jq -r '(.releases // [])[].name' 2>/dev/null || true)
+  [[ -n "$dep" ]] || continue
+  manifest=$(bosh -d "$dep" manifest 2>/dev/null | spruce json 2>/dev/null || true)
+  [[ -n "$manifest" ]] || continue
+
+  # Flatten to a space-separated list. Left as newlines, the patterns
+  # below cannot match -- they look for a space on either side.
+  releases=$(printf '%s' "$manifest" \
+             | jq -r '(.releases // [])[].name' 2>/dev/null | tr '\n' ' ' || true)
   case " $releases " in
-    *" cf "*|*" capi "*|*" routing "*) ;;
+    *" cf "*|*" capi "*|*" routing "*|*" uaa "*) ;;
     *) continue ;;
   esac
   found=yes
-  domain=$(bosh -d "$dep" manifest 2>/dev/null \
-           | spruce json 2>/dev/null \
-           | jq -r '.. | .system_domain? // empty' 2>/dev/null \
-           | head -1 || true)
+  domain=$(printf '%s' "$manifest" \
+           | jq -r '[.. | objects | select(has("system_domain")) | .system_domain]
+                    | map(select(type == "string")) | first // empty' \
+             2>/dev/null || true)
   kv deployment "$dep"
   if [[ -n "$domain" ]]; then
     kv system_domain "$domain"
