@@ -40,7 +40,13 @@ cleanup() {
 	local rc=$?
 	echo; echo; echo
 	sleep "${CLEANUP_DELAY:-10}"
-	delete_deployment || echo >&2 "warning: deployment cleanup failed (rc=$?)"
+	# State the outcome either way. A silent success is indistinguishable
+	# from this fix not being deployed at all.
+	if delete_deployment; then
+		echo "deployment cleanup ok"
+	else
+		echo >&2 "warning: deployment cleanup failed (rc=$?)"
+	fi
 	exit $rc
 }
 trap cleanup EXIT SIGINT SIGTERM
