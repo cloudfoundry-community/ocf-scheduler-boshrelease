@@ -6,11 +6,12 @@
 
 include blobs.mk
 
-.PHONY: help test blobs $(addprefix blobs-,$(UPSTREAMS))
+.PHONY: help test testflight-env blobs $(addprefix blobs-,$(UPSTREAMS))
 
 help:
-	@echo "make test     run the test suites"
-	@echo "make blobs    bump every upstream to its latest release"
+	@echo "make test            run the test suites"
+	@echo "make testflight-env  report director facts (read-only)"
+	@echo "make blobs           bump every upstream to its latest release"
 	@echo
 	@echo "Per-source targets:"
 	@$(foreach u,$(UPSTREAMS),echo "  make blobs-$(u)";)
@@ -25,6 +26,11 @@ test:
 	./ci/scripts/test-blobs
 	./ci/scripts/test-packaging
 	./ci/scripts/test-manifest-vars
+
+# Read-only. Reports what manifests/ocf-scheduler.yml must be written
+# against, and what testflight injects on its own.
+testflight-env:
+	./ci/scripts/testflight-env
 
 blobs: $(addprefix blobs-,$(UPSTREAMS))
 
