@@ -52,15 +52,23 @@ EOF
     MANIFEST_PATH=manifests/absent.yml \
     AWS_ACCESS_KEY=fake \
     AWS_SECRET_KEY=fake \
-      bash "$TESTFLIGHT" >/dev/null 2>&1
+      bash "$TESTFLIGHT" > "$d/out" 2>&1
     echo $?
   )
+  cp "$d/out" "${LAST_OUTPUT:-/dev/null}" 2>/dev/null || true
   rm -rf "$d"
 }
 
 # A real failure must survive cleanup, whatever cleanup does.
+LAST_OUTPUT=$(mktemp)
 check "failure preserved when cleanup succeeds" "1" "$(run_testflight 0)"
-check "failure preserved when cleanup fails"    "1" "$(run_testflight 3)"
+check "cleanup success is announced" "yes" \
+  "$(grep -q 'deployment cleanup ok' "$LAST_OUTPUT" && echo yes || echo no)"
+
+check "failure preserved when cleanup fails" "1" "$(run_testflight 3)"
+check "cleanup failure is announced" "yes" \
+  "$(grep -q 'warning: deployment cleanup failed' "$LAST_OUTPUT" && echo yes || echo no)"
+rm -f "$LAST_OUTPUT"
 
 echo
 if (( fails > 0 )); then
