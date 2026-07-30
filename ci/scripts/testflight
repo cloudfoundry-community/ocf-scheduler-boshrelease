@@ -31,7 +31,19 @@ delete_deployment() {
 	header "Cleaning up deployment..."
 	bosh -n delete-deployment --force
 }
-trap "echo; echo; echo; sleep 10; delete_deployment" EXIT SIGINT SIGTERM
+
+# The EXIT trap runs last, and in bash a trap's return status becomes the
+# script's. Without capturing $? first, a failed cleanup would fail an
+# otherwise passing run, and would overwrite the exit code of a real
+# failure. Cleanup problems are worth reporting, not worth failing on.
+cleanup() {
+	local rc=$?
+	echo; echo; echo
+	sleep "${CLEANUP_DELAY:-10}"
+	delete_deployment || echo >&2 "warning: deployment cleanup failed (rc=$?)"
+	exit $rc
+}
+trap cleanup EXIT SIGINT SIGTERM
 
 
 cd ${REPO_ROOT:?required}

@@ -1,0 +1,70 @@
+#!/bin/bash
+#
+# ci/scripts/test-testflight-cleanup
+#
+# The EXIT trap runs last, and in bash a trap's return status becomes the
+# script's. Left alone, that lets `bosh delete-deployment` failing turn a
+# passing testflight into a failed job, and lets it overwrite the exit
+# code of a real failure. These tests pin the status through both paths.
+#
+# Runs offline: a stub bosh on PATH stands in for a director.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTFLIGHT="${HERE}/testflight"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected '$2', got '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+# Run testflight against a throwaway repo with no manifest, so it exits 1
+# at the manifest check and the trap fires. <bosh_rc> is what the stub
+# bosh returns, standing in for the cleanup outcome.
+run_testflight() {  # run_testflight <bosh_rc> -> prints exit status
+  local bosh_rc=$1 d
+  d=$(mktemp -d)
+  ( cd "$d" && git init -q . )
+  mkdir -p "$d/stub"
+  cat > "$d/stub/bosh" <<EOF
+#!/bin/sh
+echo "Succeeded"
+exit ${bosh_rc}
+EOF
+  chmod +x "$d/stub/bosh"
+
+  (
+    cd "$d"
+    PATH="$d/stub:$PATH" \
+    CLEANUP_DELAY=0 \
+    REPO_ROOT="$d" \
+    BOSH_ENVIRONMENT=https://director.invalid:25555 \
+    BOSH_CA_CERT=fake \
+    BOSH_CLIENT=admin \
+    BOSH_CLIENT_SECRET=fake \
+    BOSH_DEPLOYMENT=test-ci \
+    MANIFEST_PATH=manifests/absent.yml \
+    AWS_ACCESS_KEY=fake \
+    AWS_SECRET_KEY=fake \
+      bash "$TESTFLIGHT" >/dev/null 2>&1
+    echo $?
+  )
+  rm -rf "$d"
+}
+
+# A real failure must survive cleanup, whatever cleanup does.
+check "failure preserved when cleanup succeeds" "1" "$(run_testflight 0)"
+check "failure preserved when cleanup fails"    "1" "$(run_testflight 3)"
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} failure(s)"
+  exit 1
+fi
+echo "all tests passed"
