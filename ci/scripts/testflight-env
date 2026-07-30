@@ -88,13 +88,10 @@ for dep in $(bosh deployments --column=name 2>/dev/null | tr -d '[:blank:]'); do
     echo "    bosh -d ${dep} manifest | grep -m1 system_domain"
   fi
 
-  # Credential NAMES only -- never values. This is how to find the CF
-  # admin password and any UAA client secrets without Vault access; the
-  # director's credential store already holds them.
-  echo
-  echo "  credentials this deployment owns (names only):"
-  bosh -d "$dep" variables 2>/dev/null | sed 's/^/    /' \
-    || echo "    could not list variables for ${dep}"
+  # Deliberately not listing this deployment's credential names. Even
+  # names describe internal structure, and every job in this pipeline is
+  # public, so a build log needs no authentication to read. Run
+  # `bosh -d <deployment> variables` by hand if the list is needed.
 done
 
 if [[ "$found" == "no" ]]; then
