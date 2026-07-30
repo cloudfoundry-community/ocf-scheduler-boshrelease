@@ -247,14 +247,17 @@ jobs:
 
 
 - name: (( grab meta.source ))
-  public: true
+  # Credentials are passed to make, so the log must not be world-readable.
+  public: false
   plan:
   - in_parallel:
     - get: git
     - get: (( grab meta.source ))
       trigger: true
       params:
-        globs: [ (( concat meta.source "-*-linux-amd64" )) ]
+        # Every platform, not just linux/amd64: the release carries darwin
+        # builds as uncompiled payload.
+        globs: [ (( concat meta.source "-*.tar.gz" )) ]
   - task: (( concat "update-" meta.source ))
     config:
       platform: linux
@@ -265,27 +268,25 @@ jobs:
       inputs:
       - name: git
       - name: (( grab meta.source ))
-      outputs:
-      - name: pushme
       run:
-        path: ./git/ci/scripts/update-blob
+        # make runs from the repo root, which is where blobs.mk and
+        # config/blobs.yml live.
+        dir: git
+        path: make
+        args:
+        - (( concat "blobs-" meta.source ))
+        # The resource has already downloaded the assets and written a
+        # version file beside them, so no ref, gh or curl is needed here.
+        - (( concat "FROM=../" meta.source ))
       params:
-        REPO_ROOT:        git
-        REPO_OUT:         pushme
-        BLOB_DIR:         (( grab meta.source ))
-        BLOB_NAME:        (( grab meta.source ))
-        BLOB_BINARY:      (( concat meta.source "-*-linux-amd64" ))
-        BLOB_DESTINATION: (( concat meta.source "/" meta.source ))
-        BLOB_CLEANUP:     (( concat meta.source "/" meta.source ))
         GIT_NAME:         (( grab meta.git.name ))
         GIT_EMAIL:        (( grab meta.git.email ))
         AWS_ACCESS_KEY:   (( grab meta.aws.access ))
         AWS_SECRET_KEY:   (( grab meta.aws.secret ))
-        BRANCH:           main
   - put: git
     params:
       rebase: true
-      repository: pushme/git
+      repository: git
 
 resources:
 - name: git
@@ -320,3 +321,7 @@ resources:
     user:         (( grab meta.github.owner ))
     repository:   (( grab meta.github.source-repo ))
     access_token: (( grab meta.github.access_token ))
+    # Upstream carries both tag schemes for the same commit: 'v2.0.1' and
+    # 'v-2.0.1'. The default filter parses neither reliably once 'v-' is
+    # in use, because 'v-2.0.1' is not semver.
+    tag_filter:   'v-?([0-9].*)'
