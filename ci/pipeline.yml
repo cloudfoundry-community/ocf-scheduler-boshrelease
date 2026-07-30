@@ -1,6 +1,8 @@
 groups:
 - name: (( concat "build-" meta.pipeline "-releases" ))
   jobs:
+  # A job left out of every group is invisible in the UI once groups exist.
+  - testflight-env
   - testflight
   - rc
   - shipit
@@ -44,6 +46,32 @@ meta:
     secret:      (( param "Please set your AWS Secret Key ID" ))
 
 jobs:
+# Read-only probe. The director is only reachable from inside the test
+# environment, so the facts needed to write manifests/<source>.yml have to
+# be gathered from a worker rather than a workstation.
+- name: testflight-env
+  public: true
+  serial: true
+  plan:
+  - get: git
+  - task: testflight-env
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: git
+      run:
+        path: ./git/ci/scripts/testflight-env
+        args: []
+      params:
+        BOSH_ENVIRONMENT:     (( grab meta.bosh.url ))
+        BOSH_CA_CERT:         (( grab meta.bosh.ca ))
+        BOSH_CLIENT:          (( grab meta.bosh.username ))
+        BOSH_CLIENT_SECRET:   (( grab meta.bosh.password ))
+
 - name: testflight
   public: true
   serial: true
