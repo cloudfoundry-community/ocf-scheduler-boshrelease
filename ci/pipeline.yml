@@ -92,7 +92,6 @@ jobs:
         args: []
       params:
         REPO_ROOT:            git
-        BOSH_ENV:             ((bosh
         BOSH_ENVIRONMENT:     (( grab meta.bosh.url ))
         BOSH_CA_CERT:         (( grab meta.bosh.ca ))
         BOSH_CLIENT:          (( grab meta.bosh.username ))
