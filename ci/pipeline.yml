@@ -50,7 +50,9 @@ jobs:
 # environment, so the facts needed to write manifests/<source>.yml have to
 # be gathered from a worker rather than a workstation.
 - name: testflight-env
-  public: true
+  # Reports director configuration and deployment names. public: true
+  # would make that readable without authentication.
+  public: false
   serial: true
   plan:
   - get: git
@@ -73,7 +75,9 @@ jobs:
         BOSH_CLIENT_SECRET:   (( grab meta.bosh.password ))
 
 - name: testflight
-  public: true
+  # Handles deployment credentials via MANIFEST_VARS and deploys to a
+  # real director. Its logs must not be world-readable.
+  public: false
   serial: true
   plan:
   - get: git
