@@ -48,6 +48,11 @@ else
   echo "  NOTE: no azs defined, so the manifest can omit azs:."
 fi
 
+# The manifest has to name a stemcell os that is actually uploaded here,
+# and testflight does not inject one.
+header "uploaded stemcells"
+bosh stemcells
+
 header "deployments"
 bosh deployments
 
