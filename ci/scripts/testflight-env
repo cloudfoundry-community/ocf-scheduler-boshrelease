@@ -22,7 +22,7 @@ trap 'rm -f "$cc"' EXIT
 bosh cloud-config > "$cc"
 
 names() {  # names <top-level key>
-  spruce json "$cc" | jq -r "(.$1 // [])[].name" | paste -sd' ' -
+  spruce json "$cc" | jq -r "(.$1 // [])[].name" | tr '\n' ' '
 }
 
 header "cloud-config offers"
@@ -38,7 +38,8 @@ kv vm_type   "$(bosh int "$cc" --path /vm_types/0/name)"
 kv disk_type "$(bosh int "$cc" --path /disk_types/0/name)"
 kv network   "$(bosh int "$cc" --path /networks/0/name)"
 
-if [[ -n "$(names azs)" ]]; then
+azs=$(names azs)
+if [[ -n "${azs// }" ]]; then
   echo
   echo "  NOTE: azs are defined. testflight does NOT inject them, so"
   echo "        manifests/ocf-scheduler.yml must declare azs: itself."
