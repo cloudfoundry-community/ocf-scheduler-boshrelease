@@ -176,7 +176,10 @@ for op_patch_file in ${MANIFEST_OP_PATHS//,/ } ; do
    op_patch_files_flags="${op_patch_files_flags} -o $op_patch_file"
 done
 
-set -x
+# Tracing stays off unless asked for. It traces every command for the
+# rest of the run, including the deploy and any errands, so a future
+# command expanding a credential would print it to a public build log.
+[[ -z $DEBUG ]] || set -x
 
 bosh int <( spruce merge "${MANIFEST_PATH}" ) \
   -o tmp/deployment.yml    \
