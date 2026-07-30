@@ -78,12 +78,21 @@ mk_sandbox() {  # mk_sandbox -> prints sandbox dir
   mkdir -p "$d/config" "$d/stub" "$d/in"
   echo '{}' > "$d/config/blobs.yml"
   : > "$d/calls"
+  # The stub mutates config/blobs.yml on add-blob the way bosh does, so
+  # the commit path has something to see.
   cat > "$d/stub/bosh" <<'EOF'
 #!/bin/sh
 echo "$@" >> "${BOSH_CALL_LOG:?}"
+if [ "$1" = "add-blob" ]; then
+  printf '%s:\n  size: 1\n' "$3" >> config/blobs.yml
+fi
 exit 0
 EOF
   chmod +x "$d/stub/bosh"
+  ( cd "$d" \
+    && git init -q . \
+    && git add blobs.mk config/blobs.yml \
+    && git -c user.name=t -c user.email=t@t commit -q -m "seed" )
   echo "$d"
 }
 
@@ -160,6 +169,32 @@ check "generated private.yml removed" "no" \
   "$([[ -f "$box/config/private.yml" ]] && echo yes || echo no)"
 check "all four assets added" "4" \
   "$(grep -c '^add-blob' "$box/calls" 2>/dev/null || true)"
+rm -rf "$box"
+
+# A bump has to commit its own result. Without this the blobs reach the
+# blobstore but config/blobs.yml never moves, so the release still
+# references the old ones and the change is lost with the container.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    AWS_ACCESS_KEY=k AWS_SECRET_KEY=s GIT_NAME=ci GIT_EMAIL=ci@example.com \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "the bump is committed" "Bump ocf-scheduler to 2.0.1" \
+  "$(cd "$box" && git log -1 --format='%s' 2>/dev/null)"
+check "nothing left uncommitted" "" \
+  "$(cd "$box" && git status --porcelain config/blobs.yml)"
+check "commit subject within 48 chars" "yes" \
+  "$(cd "$box" && [ "$(git log -1 --format='%s' | wc -c)" -le 49 ] && echo yes || echo no)"
+rm -rf "$box"
+
+# COMMIT=no lets a caller batch several bumps into one commit.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    AWS_ACCESS_KEY=k AWS_SECRET_KEY=s COMMIT=no \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "COMMIT=no leaves it staged only" "seed" \
+  "$(cd "$box" && git log -1 --format='%s' 2>/dev/null)"
 rm -rf "$box"
 
 # Concourse's github-release resource writes a `version` file beside the

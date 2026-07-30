@@ -209,6 +209,32 @@ install() {  # install <source> <dir> <version>
   bosh -n upload-blobs
   drop_private_yml
   trap - EXIT
+
+  # COMMIT=no lets a caller batch several sources into one commit.
+  [[ "${COMMIT:-yes}" == "no" ]] || commit_bump "$src" "$ver"
+}
+
+# A bump that does not commit is lost: the blobs reach the blobstore but
+# config/blobs.yml never moves, so the release still references the old
+# ones and the container takes the change with it.
+commit_bump() {  # commit_bump <source> <version>
+  local src="${1:?}" ver="${2:?}"
+
+  if [[ -z "$(git status --porcelain config/blobs.yml)" ]]; then
+    echo "no blob changes to commit for ${src} ${ver}"
+    return 0
+  fi
+
+  # Only set identity if the repository has none, so a developer's own
+  # config is left alone.
+  [[ -n "$(git config user.email)" ]] || \
+    git config user.email "${GIT_EMAIL:?GIT_EMAIL required to commit}"
+  [[ -n "$(git config user.name)" ]] || \
+    git config user.name "${GIT_NAME:?GIT_NAME required to commit}"
+
+  git add config/blobs.yml
+  git commit -q -m "Bump ${src} to ${ver}"
+  echo "committed: Bump ${src} to ${ver}"
 }
 
 # URL mode's escape hatch: add exactly one asset, leaving the sibling
