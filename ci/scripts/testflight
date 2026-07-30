@@ -47,6 +47,17 @@ cleanup() {
 	else
 		echo >&2 "warning: deployment cleanup failed (rc=$?)"
 	fi
+
+	# Cleanup runs after the failure that caused it, and its own output
+	# ends in success messages. Without this the last thing before
+	# Concourse prints 'failed' claims everything worked, and the real
+	# cause sits above a banner and four blank lines, off screen.
+	if (( rc != 0 )); then
+		echo >&2 "###############################################"
+		echo >&2 "testflight FAILED (rc=${rc})"
+		echo >&2 "cause: ${FAILURE:-see the first error above the cleanup section}"
+		echo >&2 "###############################################"
+	fi
 	exit $rc
 }
 trap cleanup EXIT SIGINT SIGTERM
@@ -60,7 +71,8 @@ header "Confirming testflight inputs"
 
 echo "Confirming deployment manifest ${MANIFEST_PATH} exists"
 if [[ ! -f ${MANIFEST_PATH} ]]; then
-	echo "Deployment manifest ${MANIFEST_PATH} does not exist"
+	echo >&2 "Deployment manifest ${MANIFEST_PATH} does not exist"
+	FAILURE="deployment manifest ${MANIFEST_PATH} does not exist"
 	exit 1
 fi
 
