@@ -65,6 +65,16 @@ check "failure preserved when cleanup succeeds" "1" "$(run_testflight 0)"
 check "cleanup success is announced" "yes" \
   "$(grep -q 'deployment cleanup ok' "$LAST_OUTPUT" && echo yes || echo no)"
 
+# The cause must be restated at the end. Cleanup output otherwise leaves
+# two success messages as the last thing before Concourse says 'failed'.
+check "failure is restated last" "yes" \
+  "$(grep -q 'testflight FAILED (rc=1)' "$LAST_OUTPUT" && echo yes || echo no)"
+check "the cause is named" "yes" \
+  "$(grep -q 'cause: deployment manifest .* does not exist' "$LAST_OUTPUT" \
+     && echo yes || echo no)"
+check "failure banner is the last output" "yes" \
+  "$(tail -1 "$LAST_OUTPUT" | grep -q '^#\+$' && echo yes || echo no)"
+
 check "failure preserved when cleanup fails" "1" "$(run_testflight 3)"
 check "cleanup failure is announced" "yes" \
   "$(grep -q 'warning: deployment cleanup failed' "$LAST_OUTPUT" && echo yes || echo no)"
