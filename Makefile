@@ -24,6 +24,7 @@ help:
 test:
 	./ci/scripts/test-blobs
 	./ci/scripts/test-packaging
+	./ci/scripts/test-manifest-vars
 
 blobs: $(addprefix blobs-,$(UPSTREAMS))
 
