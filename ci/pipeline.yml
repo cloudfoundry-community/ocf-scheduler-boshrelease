@@ -269,6 +269,10 @@ jobs:
       inputs:
       - name: git
       - name: (( grab meta.source ))
+      # git is an output as well as an input. A task's changes to an input
+      # alone are discarded, so the commit would never reach the put step.
+      outputs:
+      - name: git
       run:
         # make runs from the repo root, which is where blobs.mk and
         # config/blobs.yml live.
@@ -319,6 +323,9 @@ jobs:
       inputs:
       - name: git
       - name: (( concat meta.source "-cf-plugin" ))
+      # See the scheduler job: without git as an output the commit is lost.
+      outputs:
+      - name: git
       run:
         dir: git
         path: make
