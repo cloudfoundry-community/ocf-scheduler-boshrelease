@@ -14,6 +14,7 @@ groups:
 - name: upstream-blobs
   jobs:
   - (( grab meta.source ))
+  - (( concat meta.source "-cf-plugin" ))
 
 meta:
   name:     (( param "Please name your pipeline" ))
@@ -288,6 +289,52 @@ jobs:
       rebase: true
       repository: git
 
+# The plugin has never had a bump job -- its blob has only ever been moved
+# by hand, which is why it sat at 1.0.0 while upstream reached 1.2.0 and
+# renamed its assets.
+- name: (( concat meta.source "-cf-plugin" ))
+  public: false
+  plan:
+  - in_parallel:
+    - get: git
+    - get: (( concat meta.source "-cf-plugin" ))
+      trigger: true
+      params:
+        # Flat per-platform binaries, not tarballs, because
+        # `cf install-plugin` needs each individually downloadable. The
+        # .sha1 sidecars are deliberately excluded.
+        globs:
+        - (( concat meta.source "-cf-plugin-*+linux.amd64" ))
+        - (( concat meta.source "-cf-plugin-*+linux.arm64" ))
+        - (( concat meta.source "-cf-plugin-*+darwin.amd64" ))
+        - (( concat meta.source "-cf-plugin-*+darwin.arm64" ))
+        - (( concat meta.source "-cf-plugin-*+windows.amd64.exe" ))
+  - task: (( concat "update-" meta.source "-cf-plugin" ))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: git
+      - name: (( concat meta.source "-cf-plugin" ))
+      run:
+        dir: git
+        path: make
+        args:
+        - (( concat "blobs-" meta.source "-cf-plugin" ))
+        - (( concat "FROM=../" meta.source "-cf-plugin" ))
+      params:
+        GIT_NAME:         (( grab meta.git.name ))
+        GIT_EMAIL:        (( grab meta.git.email ))
+        AWS_ACCESS_KEY:   (( grab meta.aws.access ))
+        AWS_SECRET_KEY:   (( grab meta.aws.secret ))
+  - put: git
+    params:
+      rebase: true
+      repository: git
+
 resources:
 - name: git
   type: git
@@ -324,4 +371,12 @@ resources:
     # Upstream carries both tag schemes for the same commit: 'v2.0.1' and
     # 'v-2.0.1'. The default filter parses neither reliably once 'v-' is
     # in use, because 'v-2.0.1' is not semver.
+    tag_filter:   'v-?([0-9].*)'
+
+- name: (( concat meta.source "-cf-plugin" ))
+  type: github-release
+  source:
+    user:         (( grab meta.github.owner ))
+    repository:   (( concat meta.source "-cf-plugin" ))
+    access_token: (( grab meta.github.access_token ))
     tag_filter:   'v-?([0-9].*)'
