@@ -18,19 +18,19 @@ ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-2.0.0+windows.amd64.exe:
   size: 15201792
   object_id: 7680e7de-4fc6-4449-7cea-ff88922bacf8
   sha: sha256:c5dfc7d8bf60399c70a2e152c50a96f5029bee564bde8401a7e085aa8561cd17
-ocf-scheduler/ocf-scheduler-darwin-amd64-2.0.1.tar.gz:
-  size: 9685424
-  object_id: 9b3acefe-6490-4b5c-5341-e5fe7cb33c90
-  sha: sha256:5e7c0fe6019e4d0b6201c189fe2440597240cfb06da6843cee75044515ba32db
-ocf-scheduler/ocf-scheduler-darwin-arm64-2.0.1.tar.gz:
-  size: 9167056
-  object_id: 13ef96bf-3363-4156-5d68-24d691ab9890
-  sha: sha256:a22fecfc263f3937d734d344fa5d762fb28ea88f326452798d3b5841f7af0d85
-ocf-scheduler/ocf-scheduler-linux-amd64-2.0.1.tar.gz:
-  size: 9539690
-  object_id: e385c01f-7103-41f4-5735-04d5c1b5b5fc
-  sha: sha256:cd08039989bce0ee2d7a3d1d37b02681c7554c26edfc8e2af7b6452a3d7aac8e
-ocf-scheduler/ocf-scheduler-linux-arm64-2.0.1.tar.gz:
-  size: 8739062
-  object_id: 9c656268-02a6-4974-51f6-5e4b99b5088b
-  sha: sha256:db0d98de389614bbf2e737edd85f1932199ff36a4f0d8d2978169cdbabcf7610
+ocf-scheduler/ocf-scheduler-darwin-amd64-2.0.2.tar.gz:
+  size: 9690575
+  object_id: 68c69b48-0739-4c55-5db3-bf8154dd2768
+  sha: sha256:df9d0cf20f26c7de2d859b8f4e7089ad534580b18bb275b023c3083d9984da06
+ocf-scheduler/ocf-scheduler-darwin-arm64-2.0.2.tar.gz:
+  size: 9165184
+  object_id: 622a44cc-67b0-453c-7560-03fc33b364ae
+  sha: sha256:01b3d7f951c1085fbe7310dd20a6bdb7930a775d25c0f7b9c47895feccf1abff
+ocf-scheduler/ocf-scheduler-linux-amd64-2.0.2.tar.gz:
+  size: 9542780
+  object_id: 81a63da0-631a-4691-5401-cbf75a907377
+  sha: sha256:a775018734ebbf5b4ea15b1bd5677feef4b0e76cecc72bad017144971aea172d
+ocf-scheduler/ocf-scheduler-linux-arm64-2.0.2.tar.gz:
+  size: 8741622
+  object_id: b69856f6-77b6-4e84-5853-68d198ca0644
+  sha: sha256:9579b35541b7208c80b607e6847a9a6b0af1078ae8c438eb5ee43f564e145b55
