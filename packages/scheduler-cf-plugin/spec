@@ -1,5 +1,11 @@
 ---
 name: scheduler-cf-plugin
 
+dependencies: []
+
 files:
-- ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*-linux-amd64
+  - ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*+linux.amd64
+  - ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*+linux.arm64
+  - ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*+darwin.amd64
+  - ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*+darwin.arm64
+  - ocf-scheduler-cf-plugin/ocf-scheduler-cf-plugin-*+windows.amd64.exe

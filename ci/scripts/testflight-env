@@ -1,0 +1,112 @@
+#!/bin/bash
+#
+# ci/scripts/testflight-env
+#
+# Reports the director facts that manifests/ocf-scheduler.yml has to be
+# written against: which azs, vm_types, disk_types and networks the
+# cloud-config offers, which of those testflight will inject on its own,
+# and whether a Cloud Foundry is deployed for the scheduler to talk to.
+#
+# Read-only -- it deploys nothing and changes nothing. Needs
+# BOSH_ENVIRONMENT plus the usual BOSH_* credentials, same as testflight.
+
+set -euo pipefail
+
+: "${BOSH_ENVIRONMENT:?required}"
+
+header() { echo; echo "=== $* ==="; }
+kv() { printf '  %-12s %s\n' "$1" "$2"; }
+
+cc=$(mktemp)
+trap 'rm -f "$cc"' EXIT
+bosh cloud-config > "$cc"
+
+names() {  # names <top-level key>
+  spruce json "$cc" | jq -r "(.$1 // [])[].name" | tr '\n' ' '
+}
+
+header "cloud-config offers"
+kv azs        "$(names azs)"
+kv vm_types   "$(names vm_types)"
+kv disk_types "$(names disk_types)"
+kv networks   "$(names networks)"
+
+# Mirrors ci/scripts/testflight:97-99 exactly, so what prints here is
+# what the generated op file will substitute into every instance group.
+header "testflight will inject"
+kv vm_type   "$(bosh int "$cc" --path /vm_types/0/name)"
+kv disk_type "$(bosh int "$cc" --path /disk_types/0/name)"
+kv network   "$(bosh int "$cc" --path /networks/0/name)"
+
+azs=$(names azs)
+if [[ -n "${azs// }" ]]; then
+  echo
+  echo "  NOTE: azs are defined. testflight does NOT inject them, so"
+  echo "        manifests/ocf-scheduler.yml must declare azs: itself."
+else
+  echo
+  echo "  NOTE: no azs defined, so the manifest can omit azs:."
+fi
+
+# The manifest has to name a stemcell os that is actually uploaded here,
+# and testflight does not inject one.
+header "uploaded stemcells"
+bosh stemcells
+
+header "deployments"
+bosh deployments
+
+# The scheduler needs a CF API endpoint and a CF UAA. Neither can come
+# from this director's own uaa, which issues BOSH tokens.
+header "cf api endpoint"
+found=no
+for dep in $(bosh deployments --column=name 2>/dev/null | tr -d '[:blank:]'); do
+  [[ -n "$dep" ]] || continue
+  manifest=$(bosh -d "$dep" manifest 2>/dev/null | spruce json 2>/dev/null || true)
+  [[ -n "$manifest" ]] || continue
+
+  # Flatten to a space-separated list. Left as newlines, the patterns
+  # below cannot match -- they look for a space on either side.
+  releases=$(printf '%s' "$manifest" \
+             | jq -r '(.releases // [])[].name' 2>/dev/null | tr '\n' ' ' || true)
+  case " $releases " in
+    *" cf "*|*" capi "*|*" routing "*|*" uaa "*) ;;
+    *) continue ;;
+  esac
+  found=yes
+  domain=$(printf '%s' "$manifest" \
+           | jq -r '[.. | objects | select(has("system_domain")) | .system_domain]
+                    | map(select(type == "string")) | first // empty' \
+             2>/dev/null || true)
+  kv deployment "$dep"
+  if [[ -n "$domain" ]]; then
+    kv system_domain "$domain"
+    kv cf.api        "https://api.${domain}"
+    kv uaa.endpoint  "https://uaa.${domain}"
+  else
+    echo "  system_domain not found in the manifest; check it by hand:"
+    echo "    bosh -d ${dep} manifest | grep -m1 system_domain"
+  fi
+
+  # Deliberately not listing this deployment's credential names. Even
+  # names describe internal structure, and every job in this pipeline is
+  # public, so a build log needs no authentication to read. Run
+  # `bosh -d <deployment> variables` by hand if the list is needed.
+done
+
+if [[ "$found" == "no" ]]; then
+  echo "  No deployment carrying a cf/capi/routing release was found."
+  echo "  The scheduler cannot be given a working cf.api or uaa.endpoint"
+  echo "  until one exists."
+fi
+
+header "still needed by hand"
+cat <<'EOS'
+  scheduler.postgres.uri          no postgres job ships in this release
+  scheduler.uaa.client_id         a UAA client on the CF above
+  scheduler.uaa.client_secret     the same client's secret
+
+  Once known, set them as MANIFEST_VARS in ci/pipeline.yml. Values may
+  be written key=value or "key: value"; a value carrying its own '='
+  (a postgres query string) is now preserved.
+EOS

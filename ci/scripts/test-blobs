@@ -1,0 +1,228 @@
+#!/bin/bash
+#
+# ci/scripts/test-blobs
+#
+# Tests for ci/scripts/blobs helper subcommands.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BLOBS="${HERE}/blobs"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected '$2', got '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+check_fails() {  # check_fails <description> <command...>
+  if "${@:2}" >/dev/null 2>&1; then
+    echo "FAIL - $1: expected non-zero exit, got 0"
+    fails=$((fails + 1))
+  else
+    echo "ok   - $1"
+  fi
+}
+
+# Ref normalization. 'v-' must be stripped before 'v'; reversed, the 'v'
+# rule leaves a leading '-' on a v- tag.
+check "bare version unchanged"  "2.0.1" "$("$BLOBS" normalize 2.0.1)"
+check "v prefix stripped"       "2.0.1" "$("$BLOBS" normalize v2.0.1)"
+check "v- prefix stripped"      "2.0.1" "$("$BLOBS" normalize v-2.0.1)"
+check "prerelease preserved"    "2.0.1-rc.1" "$("$BLOBS" normalize v2.0.1-rc.1)"
+check "v- with prerelease"      "2.0.1-rc.1" "$("$BLOBS" normalize v-2.0.1-rc.1)"
+
+# Asset-name construction must match upstream exactly.
+check "scheduler asset name" \
+  "ocf-scheduler-linux-amd64-2.0.1.tar.gz" \
+  "$("$BLOBS" asset-name ocf-scheduler 2.0.1 linux amd64)"
+check "plugin asset name" \
+  "ocf-scheduler-cf-plugin-1.2.0+linux.amd64" \
+  "$("$BLOBS" asset-name ocf-scheduler-cf-plugin 1.2.0 linux amd64)"
+check "plugin windows asset name" \
+  "ocf-scheduler-cf-plugin-1.2.0+windows.amd64.exe" \
+  "$("$BLOBS" asset-name ocf-scheduler-cf-plugin 1.2.0 windows amd64)"
+
+# A missing linux asset is fatal; a missing darwin asset warns.
+scratch=$(mktemp -d)
+mkdir -p "$scratch/in"
+: > "$scratch/in/ocf-scheduler-linux-amd64-2.0.1.tar.gz"
+check_fails "missing required linux/arm64 is fatal" \
+  "$BLOBS" verify ocf-scheduler "$scratch/in" 2.0.1
+: > "$scratch/in/ocf-scheduler-linux-arm64-2.0.1.tar.gz"
+check "missing darwin warns only" "0" \
+  "$("$BLOBS" verify ocf-scheduler "$scratch/in" 2.0.1 >/dev/null 2>&1; echo $?)"
+rm -rf "$scratch"
+
+# An unknown source expands to empty REQUIRED/PLATFORMS lists. Both loops
+# would then run zero times and report success, so a genuinely missing
+# asset would pass. Empty must be fatal.
+scratch=$(mktemp -d)
+mkdir -p "$scratch/in"
+check_fails "unknown source is fatal" \
+  "$BLOBS" verify no-such-source "$scratch/in" 2.0.1
+rm -rf "$scratch"
+
+# --- install ---------------------------------------------------------------
+#
+# Runs offline: a stub `bosh` on PATH records calls instead of reaching S3.
+# spruce and jq are the real ones.
+
+mk_sandbox() {  # mk_sandbox -> prints sandbox dir
+  local d; d=$(mktemp -d)
+  cp "${HERE}/../../blobs.mk" "$d/blobs.mk"
+  mkdir -p "$d/config" "$d/stub" "$d/in"
+  echo '{}' > "$d/config/blobs.yml"
+  : > "$d/calls"
+  # The stub mutates config/blobs.yml on add-blob the way bosh does, so
+  # the commit path has something to see.
+  cat > "$d/stub/bosh" <<'EOF'
+#!/bin/sh
+echo "$@" >> "${BOSH_CALL_LOG:?}"
+if [ "$1" = "add-blob" ]; then
+  printf '%s:\n  size: 1\n' "$3" >> config/blobs.yml
+fi
+exit 0
+EOF
+  chmod +x "$d/stub/bosh"
+  ( cd "$d" \
+    && git init -q . \
+    && git add blobs.mk config/blobs.yml \
+    && git -c user.name=t -c user.email=t@t commit -q -m "seed" )
+  echo "$d"
+}
+
+seed_scheduler_assets() {  # seed_scheduler_assets <dir> <version>
+  local d=$1 v=$2 p
+  for p in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+    : > "$d/ocf-scheduler-$p-$v.tar.gz"
+  done
+}
+
+# A pre-existing private.yml is the operator's own credentials file. It
+# must be used as-is and must survive, including when the run fails.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+printf 'operator-owned\n' > "$box/config/private.yml"
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "pre-existing private.yml survives" "yes" \
+  "$([[ -f "$box/config/private.yml" ]] && echo yes || echo no)"
+check "pre-existing private.yml unmodified" "operator-owned" \
+  "$(cat "$box/config/private.yml" 2>/dev/null)"
+rm -rf "$box"
+
+# With no file and no env vars, credentials come from Vault via safe.
+# The stub stands in for an authenticated safe; the values are fake.
+stub_safe() {  # stub_safe <dir>
+  cat > "$1/stub/safe" <<'EOF'
+#!/bin/sh
+# safe get --keys <path>   -> key names
+# safe get <path>          -> key: value YAML
+if [ "$2" = "--keys" ]; then
+  echo "access_key_id"; echo "secret_access_key"; exit 0
+fi
+echo "--- # $2"
+echo "access_key_id: FAKE-ACCESS-KEY"
+echo "secret_access_key: FAKE-SECRET-KEY"
+EOF
+  chmod +x "$1/stub/safe"
+}
+
+box=$(mk_sandbox)
+stub_safe "$box"
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    BLOBSTORE_VAULT_PATH=secret/fake/aws \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) > "$box/log" 2>&1
+check "vault used when no file or env" "yes" \
+  "$(grep -q 'config/private.yml from secret/fake/aws' "$box/log" && echo yes || echo no)"
+check "generated from vault is removed" "no" \
+  "$([[ -f "$box/config/private.yml" ]] && echo yes || echo no)"
+check "vault credentials never printed" "0" \
+  "$(grep -c 'FAKE-SECRET-KEY' "$box/log" 2>/dev/null || true)"
+rm -rf "$box"
+
+# An operator's own file still wins over Vault.
+box=$(mk_sandbox)
+stub_safe "$box"
+seed_scheduler_assets "$box/in" 2.0.1
+printf 'operator-owned\n' > "$box/config/private.yml"
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    BLOBSTORE_VAULT_PATH=secret/fake/aws \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "existing file beats vault" "operator-owned" \
+  "$(cat "$box/config/private.yml" 2>/dev/null)"
+rm -rf "$box"
+
+# One we created ourselves is ephemeral and must be cleaned up.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    AWS_ACCESS_KEY=k AWS_SECRET_KEY=s \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "generated private.yml removed" "no" \
+  "$([[ -f "$box/config/private.yml" ]] && echo yes || echo no)"
+check "all four assets added" "4" \
+  "$(grep -c '^add-blob' "$box/calls" 2>/dev/null || true)"
+rm -rf "$box"
+
+# A bump has to commit its own result. Without this the blobs reach the
+# blobstore but config/blobs.yml never moves, so the release still
+# references the old ones and the change is lost with the container.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    AWS_ACCESS_KEY=k AWS_SECRET_KEY=s GIT_NAME=ci GIT_EMAIL=ci@example.com \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "the bump is committed" "Bump ocf-scheduler to 2.0.1" \
+  "$(cd "$box" && git log -1 --format='%s' 2>/dev/null)"
+check "nothing left uncommitted" "" \
+  "$(cd "$box" && git status --porcelain config/blobs.yml)"
+check "commit subject within 48 chars" "yes" \
+  "$(cd "$box" && [ "$(git log -1 --format='%s' | wc -c)" -le 49 ] && echo yes || echo no)"
+rm -rf "$box"
+
+# COMMIT=no lets a caller batch several bumps into one commit.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    AWS_ACCESS_KEY=k AWS_SECRET_KEY=s COMMIT=no \
+    "$BLOBS" install ocf-scheduler "$box/in" 2.0.1 ) >/dev/null 2>&1
+check "COMMIT=no leaves it staged only" "seed" \
+  "$(cd "$box" && git log -1 --format='%s' 2>/dev/null)"
+rm -rf "$box"
+
+# Concourse's github-release resource writes a `version` file beside the
+# assets. FROM mode must read it rather than demanding a REF.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+echo "2.0.1" > "$box/in/version"
+check "version derived from FROM dir" "2.0.1" \
+  "$(cd "$box" && "$BLOBS" dir-version "$box/in")"
+rm -rf "$box"
+
+# URL mode is a single-asset escape hatch. It must replace only that
+# asset's blob, never wipe the sibling platforms the way install() does.
+box=$(mk_sandbox)
+seed_scheduler_assets "$box/in" 2.0.1
+( cd "$box" && PATH="$box/stub:$PATH" BOSH_CALL_LOG="$box/calls" \
+    AWS_ACCESS_KEY=k AWS_SECRET_KEY=s \
+    "$BLOBS" install-one ocf-scheduler \
+      "$box/in/ocf-scheduler-linux-amd64-2.0.1.tar.gz" ) >/dev/null 2>&1
+check "single asset added" "1" \
+  "$(grep -c '^add-blob' "$box/calls" 2>/dev/null || true)"
+check "siblings not removed" "0" \
+  "$(grep -c '^remove-blob' "$box/calls" 2>/dev/null || true)"
+rm -rf "$box"
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} failure(s)"
+  exit 1
+fi
+echo "all tests passed"

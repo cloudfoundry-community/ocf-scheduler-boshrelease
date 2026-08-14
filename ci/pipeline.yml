@@ -1,6 +1,8 @@
 groups:
 - name: (( concat "build-" meta.pipeline "-releases" ))
   jobs:
+  # A job left out of every group is invisible in the UI once groups exist.
+  - testflight-env
   - testflight
   - rc
   - shipit
@@ -12,6 +14,7 @@ groups:
 - name: upstream-blobs
   jobs:
   - (( grab meta.source ))
+  - (( concat meta.source "-cf-plugin" ))
 
 meta:
   name:     (( param "Please name your pipeline" ))
@@ -44,8 +47,38 @@ meta:
     secret:      (( param "Please set your AWS Secret Key ID" ))
 
 jobs:
+# Read-only probe. The director is only reachable from inside the test
+# environment, so the facts needed to write manifests/<source>.yml have to
+# be gathered from a worker rather than a workstation.
+- name: testflight-env
+  # Reports director configuration and deployment names. public: true
+  # would make that readable without authentication.
+  public: false
+  serial: true
+  plan:
+  - get: git
+  - task: testflight-env
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: git
+      run:
+        path: ./git/ci/scripts/testflight-env
+        args: []
+      params:
+        BOSH_ENVIRONMENT:     (( grab meta.bosh.url ))
+        BOSH_CA_CERT:         (( grab meta.bosh.ca ))
+        BOSH_CLIENT:          (( grab meta.bosh.username ))
+        BOSH_CLIENT_SECRET:   (( grab meta.bosh.password ))
+
 - name: testflight
-  public: true
+  # Handles deployment credentials via MANIFEST_VARS and deploys to a
+  # real director. Its logs must not be world-readable.
+  public: false
   serial: true
   plan:
   - get: git
@@ -64,7 +97,6 @@ jobs:
         args: []
       params:
         REPO_ROOT:            git
-        BOSH_ENV:             ((bosh
         BOSH_ENVIRONMENT:     (( grab meta.bosh.url ))
         BOSH_CA_CERT:         (( grab meta.bosh.ca ))
         BOSH_CLIENT:          (( grab meta.bosh.username ))
@@ -216,14 +248,17 @@ jobs:
 
 
 - name: (( grab meta.source ))
-  public: true
+  # Credentials are passed to make, so the log must not be world-readable.
+  public: false
   plan:
   - in_parallel:
     - get: git
     - get: (( grab meta.source ))
       trigger: true
       params:
-        globs: [ (( concat meta.source "-*-linux-amd64" )) ]
+        # Every platform, not just linux/amd64: the release carries darwin
+        # builds as uncompiled payload.
+        globs: [ (( concat meta.source "-*.tar.gz" )) ]
   - task: (( concat "update-" meta.source ))
     config:
       platform: linux
@@ -234,27 +269,78 @@ jobs:
       inputs:
       - name: git
       - name: (( grab meta.source ))
+      # git is an output as well as an input. A task's changes to an input
+      # alone are discarded, so the commit would never reach the put step.
       outputs:
-      - name: pushme
+      - name: git
       run:
-        path: ./git/ci/scripts/update-blob
+        # make runs from the repo root, which is where blobs.mk and
+        # config/blobs.yml live.
+        dir: git
+        path: make
+        args:
+        - (( concat "blobs-" meta.source ))
+        # The resource has already downloaded the assets and written a
+        # version file beside them, so no ref, gh or curl is needed here.
+        - (( concat "FROM=../" meta.source ))
       params:
-        REPO_ROOT:        git
-        REPO_OUT:         pushme
-        BLOB_DIR:         (( grab meta.source ))
-        BLOB_NAME:        (( grab meta.source ))
-        BLOB_BINARY:      (( concat meta.source "-*-linux-amd64" ))
-        BLOB_DESTINATION: (( concat meta.source "/" meta.source ))
-        BLOB_CLEANUP:     (( concat meta.source "/" meta.source ))
         GIT_NAME:         (( grab meta.git.name ))
         GIT_EMAIL:        (( grab meta.git.email ))
         AWS_ACCESS_KEY:   (( grab meta.aws.access ))
         AWS_SECRET_KEY:   (( grab meta.aws.secret ))
-        BRANCH:           main
   - put: git
     params:
       rebase: true
-      repository: pushme/git
+      repository: git
+
+# The plugin has never had a bump job -- its blob has only ever been moved
+# by hand, which is why it sat at 1.0.0 while upstream reached 1.2.0 and
+# renamed its assets.
+- name: (( concat meta.source "-cf-plugin" ))
+  public: false
+  plan:
+  - in_parallel:
+    - get: git
+    - get: (( concat meta.source "-cf-plugin" ))
+      trigger: true
+      params:
+        # Flat per-platform binaries, not tarballs, because
+        # `cf install-plugin` needs each individually downloadable. The
+        # .sha1 sidecars are deliberately excluded.
+        globs:
+        - (( concat meta.source "-cf-plugin-*+linux.amd64" ))
+        - (( concat meta.source "-cf-plugin-*+linux.arm64" ))
+        - (( concat meta.source "-cf-plugin-*+darwin.amd64" ))
+        - (( concat meta.source "-cf-plugin-*+darwin.arm64" ))
+        - (( concat meta.source "-cf-plugin-*+windows.amd64.exe" ))
+  - task: (( concat "update-" meta.source "-cf-plugin" ))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: git
+      - name: (( concat meta.source "-cf-plugin" ))
+      # See the scheduler job: without git as an output the commit is lost.
+      outputs:
+      - name: git
+      run:
+        dir: git
+        path: make
+        args:
+        - (( concat "blobs-" meta.source "-cf-plugin" ))
+        - (( concat "FROM=../" meta.source "-cf-plugin" ))
+      params:
+        GIT_NAME:         (( grab meta.git.name ))
+        GIT_EMAIL:        (( grab meta.git.email ))
+        AWS_ACCESS_KEY:   (( grab meta.aws.access ))
+        AWS_SECRET_KEY:   (( grab meta.aws.secret ))
+  - put: git
+    params:
+      rebase: true
+      repository: git
 
 resources:
 - name: git
@@ -289,3 +375,15 @@ resources:
     user:         (( grab meta.github.owner ))
     repository:   (( grab meta.github.source-repo ))
     access_token: (( grab meta.github.access_token ))
+    # Upstream carries both tag schemes for the same commit: 'v2.0.1' and
+    # 'v-2.0.1'. The default filter parses neither reliably once 'v-' is
+    # in use, because 'v-2.0.1' is not semver.
+    tag_filter:   'v-?([0-9].*)'
+
+- name: (( concat meta.source "-cf-plugin" ))
+  type: github-release
+  source:
+    user:         (( grab meta.github.owner ))
+    repository:   (( concat meta.source "-cf-plugin" ))
+    access_token: (( grab meta.github.access_token ))
+    tag_filter:   'v-?([0-9].*)'

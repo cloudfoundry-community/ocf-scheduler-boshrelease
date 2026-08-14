@@ -1,0 +1,88 @@
+#!/bin/bash
+#
+# ci/scripts/test-testflight-cleanup
+#
+# The EXIT trap runs last, and in bash a trap's return status becomes the
+# script's. Left alone, that lets `bosh delete-deployment` failing turn a
+# passing testflight into a failed job, and lets it overwrite the exit
+# code of a real failure. These tests pin the status through both paths.
+#
+# Runs offline: a stub bosh on PATH stands in for a director.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTFLIGHT="${HERE}/testflight"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected '$2', got '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+# Run testflight against a throwaway repo with no manifest, so it exits 1
+# at the manifest check and the trap fires. <bosh_rc> is what the stub
+# bosh returns, standing in for the cleanup outcome.
+run_testflight() {  # run_testflight <bosh_rc> -> prints exit status
+  local bosh_rc=$1 d
+  d=$(mktemp -d)
+  ( cd "$d" && git init -q . )
+  mkdir -p "$d/stub"
+  cat > "$d/stub/bosh" <<EOF
+#!/bin/sh
+echo "Succeeded"
+exit ${bosh_rc}
+EOF
+  chmod +x "$d/stub/bosh"
+
+  (
+    cd "$d"
+    PATH="$d/stub:$PATH" \
+    CLEANUP_DELAY=0 \
+    REPO_ROOT="$d" \
+    BOSH_ENVIRONMENT=https://director.invalid:25555 \
+    BOSH_CA_CERT=fake \
+    BOSH_CLIENT=admin \
+    BOSH_CLIENT_SECRET=fake \
+    BOSH_DEPLOYMENT=test-ci \
+    MANIFEST_PATH=manifests/absent.yml \
+    AWS_ACCESS_KEY=fake \
+    AWS_SECRET_KEY=fake \
+      bash "$TESTFLIGHT" > "$d/out" 2>&1
+    echo $?
+  )
+  cp "$d/out" "${LAST_OUTPUT:-/dev/null}" 2>/dev/null || true
+  rm -rf "$d"
+}
+
+# A real failure must survive cleanup, whatever cleanup does.
+LAST_OUTPUT=$(mktemp)
+check "failure preserved when cleanup succeeds" "1" "$(run_testflight 0)"
+check "cleanup success is announced" "yes" \
+  "$(grep -q 'deployment cleanup ok' "$LAST_OUTPUT" && echo yes || echo no)"
+
+# The cause must be restated at the end. Cleanup output otherwise leaves
+# two success messages as the last thing before Concourse says 'failed'.
+check "failure is restated last" "yes" \
+  "$(grep -q 'testflight FAILED (rc=1)' "$LAST_OUTPUT" && echo yes || echo no)"
+check "the cause is named" "yes" \
+  "$(grep -q 'cause: deployment manifest .* does not exist' "$LAST_OUTPUT" \
+     && echo yes || echo no)"
+check "failure banner is the last output" "yes" \
+  "$(tail -1 "$LAST_OUTPUT" | grep -q '^#\+$' && echo yes || echo no)"
+
+check "failure preserved when cleanup fails" "1" "$(run_testflight 3)"
+check "cleanup failure is announced" "yes" \
+  "$(grep -q 'warning: deployment cleanup failed' "$LAST_OUTPUT" && echo yes || echo no)"
+rm -f "$LAST_OUTPUT"
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} failure(s)"
+  exit 1
+fi
+echo "all tests passed"

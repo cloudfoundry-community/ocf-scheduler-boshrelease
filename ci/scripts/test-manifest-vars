@@ -1,0 +1,74 @@
+#!/bin/bash
+#
+# ci/scripts/test-manifest-vars
+#
+# Tests for ci/scripts/manifest-vars, the filter that normalises the
+# MANIFEST_VARS parameter into the vars file testflight hands to bosh.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FILTER="${HERE}/manifest-vars"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1"
+    echo "       expected: $2"
+    echo "       actual:   $3"
+    fails=$((fails + 1))
+  fi
+}
+
+filter() { printf '%s\n' "$1" | "$FILTER"; }
+
+# The historical purpose: accept key=value as well as key: value.
+check "key=value becomes yaml" \
+  "cf_api: https://api.example.com" \
+  "$(filter 'cf_api=https://api.example.com')"
+
+check "spaces around = are absorbed" \
+  "cf_api: https://api.example.com" \
+  "$(filter 'cf_api = https://api.example.com')"
+
+check "yaml passes through untouched" \
+  "cf_api: https://api.example.com" \
+  "$(filter 'cf_api: https://api.example.com')"
+
+# The bug this filter exists to fix. A global s/=/:/ rewrote every '='
+# in the value, so a URI query string or a padded token was corrupted.
+check "only the first = is converted" \
+  "postgres_uri: postgres://u:p@h:5432/sched?sslmode=disable" \
+  "$(filter 'postgres_uri=postgres://u:p@h:5432/sched?sslmode=disable')"
+
+check "= inside an already-yaml value survives" \
+  "postgres_uri: postgres://u:p@h:5432/sched?sslmode=disable" \
+  "$(filter 'postgres_uri: postgres://u:p@h:5432/sched?sslmode=disable')"
+
+check "base64 padding survives" \
+  "token: YWJjZGVm==" \
+  "$(filter 'token=YWJjZGVm==')"
+
+check "multiple query params survive" \
+  "uri: postgres://h/db?sslmode=disable&pool_max_conns=10" \
+  "$(filter 'uri=postgres://h/db?sslmode=disable&pool_max_conns=10')"
+
+# The current pipeline default must keep working.
+check "empty document passes through" \
+  "--- {}" \
+  "$(filter '--- {}')"
+
+# Whatever comes out has to be parseable, since testflight feeds it to
+# bosh int as a vars file.
+out=$(printf 'cf_api=https://api.example.com\npg=postgres://h/db?sslmode=disable\n' | "$FILTER")
+check "output is valid yaml" "0" \
+  "$(printf '%s\n' "$out" | spruce json >/dev/null 2>&1; echo $?)"
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} failure(s)"
+  exit 1
+fi
+echo "all tests passed"

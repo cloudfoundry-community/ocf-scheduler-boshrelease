@@ -31,7 +31,36 @@ delete_deployment() {
 	header "Cleaning up deployment..."
 	bosh -n delete-deployment --force
 }
-trap "echo; echo; echo; sleep 10; delete_deployment" EXIT SIGINT SIGTERM
+
+# The EXIT trap runs last, and in bash a trap's return status becomes the
+# script's. Without capturing $? first, a failed cleanup would fail an
+# otherwise passing run, and would overwrite the exit code of a real
+# failure. Cleanup problems are worth reporting, not worth failing on.
+cleanup() {
+	local rc=$?
+	echo; echo; echo
+	sleep "${CLEANUP_DELAY:-10}"
+	# State the outcome either way. A silent success is indistinguishable
+	# from this fix not being deployed at all.
+	if delete_deployment; then
+		echo "deployment cleanup ok"
+	else
+		echo >&2 "warning: deployment cleanup failed (rc=$?)"
+	fi
+
+	# Cleanup runs after the failure that caused it, and its own output
+	# ends in success messages. Without this the last thing before
+	# Concourse prints 'failed' claims everything worked, and the real
+	# cause sits above a banner and four blank lines, off screen.
+	if (( rc != 0 )); then
+		echo >&2 "###############################################"
+		echo >&2 "testflight FAILED (rc=${rc})"
+		echo >&2 "cause: ${FAILURE:-see the first error above the cleanup section}"
+		echo >&2 "###############################################"
+	fi
+	exit $rc
+}
+trap cleanup EXIT SIGINT SIGTERM
 
 
 cd ${REPO_ROOT:?required}
@@ -42,7 +71,8 @@ header "Confirming testflight inputs"
 
 echo "Confirming deployment manifest ${MANIFEST_PATH} exists"
 if [[ ! -f ${MANIFEST_PATH} ]]; then
-	echo "Deployment manifest ${MANIFEST_PATH} does not exist"
+	echo >&2 "Deployment manifest ${MANIFEST_PATH} does not exist"
+	FAILURE="deployment manifest ${MANIFEST_PATH} does not exist"
 	exit 1
 fi
 
@@ -51,10 +81,14 @@ mkdir -p tmp
 
 # $MANIFEST_VARS can either be "key: value" or "key=value"
 # and will be converted to "key: value" YAML
-echo "${MANIFEST_VARS:-"{} ---"}" | sed -e "s/ *= */: /g" > tmp/vars.yml
+echo "${MANIFEST_VARS:-"{} ---"}" | $DIR/manifest-vars > tmp/vars.yml
 if [[ ! -z $DEBUG ]]; then
-	echo "Variables passed to deployment manifest:"
-	cat tmp/vars.yml
+	# Names only. These vars carry deployment credentials, and every job
+	# in this pipeline is public, so build logs are readable without
+	# authentication -- printing the values would publish them.
+	echo "Variables passed to deployment manifest (names only):"
+	grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_-]*:' tmp/vars.yml \
+	  | tr -d ' :' | sed 's/^/  /'
 fi
 # convert YAML to JSON to check YAML validity
 spruce json tmp/vars.yml > /dev/null
@@ -142,7 +176,10 @@ for op_patch_file in ${MANIFEST_OP_PATHS//,/ } ; do
    op_patch_files_flags="${op_patch_files_flags} -o $op_patch_file"
 done
 
-set -x
+# Tracing stays off unless asked for. It traces every command for the
+# rest of the run, including the deploy and any errands, so a future
+# command expanding a credential would print it to a public build log.
+[[ -z $DEBUG ]] || set -x
 
 bosh int <( spruce merge "${MANIFEST_PATH}" ) \
   -o tmp/deployment.yml    \

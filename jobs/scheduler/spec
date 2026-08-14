@@ -7,6 +7,7 @@ templates:
 
 packages:
 - scheduler
+- scheduler-cf-plugin
 
 properties: 
   scheduler.uaa.client_id:
@@ -23,5 +24,5 @@ properties:
     default: 20
     description: "Number of scheduling workers"
   scheduler.log_level:
-    description: "Log level"
+    description: "Log level trace, debug, info, warn, error, fatal, panic"
     default: "info"

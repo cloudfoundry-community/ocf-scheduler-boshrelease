@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -eu
+
+# Carried payload, not a deploy target: these binaries are for testing
+# non-linux paths and are never executed on a stemcell. No job depends
+# on this package, so BOSH ships it without compiling it.
+
+mkdir -p "${BOSH_INSTALL_TARGET}/dist"
+
+found=0
+for tarball in ocf-scheduler/ocf-scheduler-darwin-*.tar.gz; do
+  [ -f "$tarball" ] || continue
+  cp "$tarball" "${BOSH_INSTALL_TARGET}/dist/"
+  found=$((found + 1))
+done
+
+echo "carried ${found} non-stemcell scheduler build(s)"

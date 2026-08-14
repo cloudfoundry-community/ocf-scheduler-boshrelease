@@ -1,0 +1,330 @@
+#!/bin/bash
+#
+# ci/scripts/blobs
+#
+# Single mechanism for pinning upstream artifacts as BOSH blobs.
+# Invoked by the Makefile; used identically by humans and by CI.
+
+set -euo pipefail
+
+# Strip a 'v-' prefix before a plain 'v'. Reversed, the 'v' rule turns
+# 'v-2.0.1' into '-2.0.1', which downstream version parsing reads as a
+# prerelease separator and mislabels a GA release.
+normalize() {
+  local ref="${1:?normalize requires a ref}"
+  ref="${ref#v-}"
+  ref="${ref#v}"
+  echo "$ref"
+}
+
+# Read a per-source variable out of blobs.mk without duplicating the
+# table here. Make is the single source of truth for it.
+source_var() {  # source_var <source> <suffix>
+  local src="${1:?}" suffix="${2:?}"
+  make --no-print-directory -f - <<EOF
+include blobs.mk
+show:
+	@echo \$(${src}_${suffix})
+EOF
+}
+
+asset_name() {  # asset_name <source> <version> <os> <arch>
+  local src="${1:?}" ver="${2:?}" os="${3:?}" arch="${4:?}"
+  make --no-print-directory -f - <<EOF
+include blobs.mk
+show:
+	@echo \$(call ${src}_ASSET,${ver},${os},${arch})
+EOF
+}
+
+# Required platforms must be present; the rest warn and continue.
+verify() {  # verify <source> <dir> <version>
+  local src="${1:?}" dir="${2:?}" ver="${3:?}"
+  local missing=0 plat os arch name required platforms
+
+  required=$(source_var "$src" REQUIRED)
+  platforms=$(source_var "$src" PLATFORMS)
+
+  # An unknown source, a missing blobs.mk, or the wrong working directory
+  # all expand to empty lists. Both loops below would then run zero times
+  # and report success, turning a real failure into a silent no-op.
+  if [[ -z "${required// }" || -z "${platforms// }" ]]; then
+    echo >&2 "unknown source '$src' (no platforms declared in blobs.mk)"
+    return 1
+  fi
+
+  for plat in $required; do
+    os=${plat%%/*}; arch=${plat##*/}
+    name=$(asset_name "$src" "$ver" "$os" "$arch")
+    if [[ ! -f "$dir/$name" ]]; then
+      echo >&2 "missing required asset: $src $ver $plat ($name)"
+      missing=$((missing + 1))
+    fi
+  done
+
+  for plat in $platforms; do
+    case " $required " in *" $plat "*) continue ;; esac
+    os=${plat%%/*}; arch=${plat##*/}
+    name=$(asset_name "$src" "$ver" "$os" "$arch")
+    [[ -f "$dir/$name" ]] || \
+      echo >&2 "warning: $src $ver has no $plat asset ($name) - continuing"
+  done
+
+  (( missing == 0 ))
+}
+
+# Both tag schemes exist upstream. Try the ref as given first, so an
+# exact tag always wins, then the two derived forms.
+resolve_tag() {  # resolve_tag <source> <ref>
+  local src="${1:?}" ref="${2:?}" repo ver candidate
+  repo=$(source_var "$src" REPO)
+  ver=$(normalize "$ref")
+
+  for candidate in "$ref" "v-${ver}" "v${ver}"; do
+    if gh release view "$candidate" --repo "$repo" >/dev/null 2>&1; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  echo >&2 "no release found for '$ref' in $repo (tried: $ref v-${ver} v${ver})"
+  return 1
+}
+
+latest_tag() {  # latest_tag <source>
+  local src="${1:?}" repo
+  repo=$(source_var "$src" REPO)
+  gh release view --repo "$repo" --json tagName --jq .tagName
+}
+
+# An operator may keep their own config/private.yml. That file is theirs:
+# use it as-is and never touch it. Only a file we generated ourselves is
+# ephemeral, and only that one gets removed again.
+PRIVATE_YML_GENERATED=no
+
+# The same credentials Concourse resolves as ((aws.access_key_id)). Values
+# travel from safe into the file through a pipe: never as an argument, never
+# echoed, so they stay out of argv, shell history and any log.
+BLOBSTORE_VAULT_PATH="${BLOBSTORE_VAULT_PATH:-secret/concourse/cloudfoundry-community/aws}"
+
+write_from_vault() {
+  command -v safe >/dev/null || return 1
+  safe get --keys "$BLOBSTORE_VAULT_PATH" >/dev/null 2>&1 || return 1
+
+  echo "writing config/private.yml from ${BLOBSTORE_VAULT_PATH}"
+  {
+    echo "---"
+    echo "blobstore:"
+    echo "  provider: s3"
+    echo "  options:"
+    safe get "$BLOBSTORE_VAULT_PATH" \
+      | grep -E '^(access_key_id|secret_access_key):' \
+      | sed 's/^/    /'
+  } > config/private.yml
+
+  # A path that exists but holds the wrong keys yields a file with an
+  # empty options block, which bosh reports far less clearly than this.
+  grep -q 'access_key_id:' config/private.yml || {
+    rm -f config/private.yml
+    echo >&2 "${BLOBSTORE_VAULT_PATH} has no access_key_id/secret_access_key"
+    return 1
+  }
+}
+
+write_from_env() {
+  [[ -n "${AWS_ACCESS_KEY:-}" && -n "${AWS_SECRET_KEY:-}" ]] || return 1
+  cat > config/private.yml <<EOF
+---
+blobstore:
+  provider: s3
+  options:
+    access_key_id: ${AWS_ACCESS_KEY}
+    secret_access_key: ${AWS_SECRET_KEY}
+EOF
+}
+
+# Precedence: the operator's own file, then Vault, then the environment.
+write_private_yml() {
+  if [[ -f config/private.yml ]]; then
+    echo "using the existing config/private.yml"
+    PRIVATE_YML_GENERATED=no
+    return 0
+  fi
+
+  if write_from_vault || write_from_env; then
+    PRIVATE_YML_GENERATED=yes
+    return 0
+  fi
+
+  echo >&2 "no blobstore credentials: provide config/private.yml,"
+  echo >&2 "authenticate to Vault (safe auth ...), or set"
+  echo >&2 "AWS_ACCESS_KEY and AWS_SECRET_KEY"
+  return 1
+}
+
+drop_private_yml() {
+  [[ "$PRIVATE_YML_GENERATED" == "yes" ]] || return 0
+  rm -f config/private.yml
+  PRIVATE_YML_GENERATED=no
+}
+
+# The version Concourse's github-release resource records beside the
+# assets it downloaded. This is what keeps FROM mode dependency-free:
+# the pipeline hands over a directory and nothing else.
+dir_version() {  # dir_version <dir>
+  local dir="${1:?dir_version requires a directory}"
+  if [[ -f "$dir/version" ]]; then
+    normalize "$(tr -d '[:space:]' < "$dir/version")"
+    return 0
+  fi
+  echo >&2 "no version file in $dir - pass REF= to name the version"
+  return 1
+}
+
+install() {  # install <source> <dir> <version>
+  local src="${1:?}" dir="${2:?}" ver="${3:?}"
+  local blobdir plat os arch name stale
+
+  verify "$src" "$dir" "$ver" || return 1
+  blobdir=$(source_var "$src" BLOBDIR)
+
+  trap drop_private_yml EXIT
+  write_private_yml
+
+  # Drop every existing blob under this source's directory, so a bump
+  # never leaves two versions for one platform behind.
+  stale=$(spruce json config/blobs.yml | jq -r \
+    --arg d "${blobdir}/" 'keys[] | select(startswith($d))')
+  if [[ -n "$stale" ]]; then
+    echo "$stale" | xargs -L1 bosh remove-blob
+  fi
+
+  for plat in $(source_var "$src" PLATFORMS); do
+    os=${plat%%/*}; arch=${plat##*/}
+    name=$(asset_name "$src" "$ver" "$os" "$arch")
+    [[ -f "$dir/$name" ]] || continue
+    bosh add-blob "$dir/$name" "${blobdir}/${name}"
+  done
+
+  bosh -n upload-blobs
+  drop_private_yml
+  trap - EXIT
+
+  # COMMIT=no lets a caller batch several sources into one commit.
+  [[ "${COMMIT:-yes}" == "no" ]] || commit_bump "$src" "$ver"
+}
+
+# A bump that does not commit is lost: the blobs reach the blobstore but
+# config/blobs.yml never moves, so the release still references the old
+# ones and the container takes the change with it.
+commit_bump() {  # commit_bump <source> <version>
+  local src="${1:?}" ver="${2:?}"
+
+  if [[ -z "$(git status --porcelain config/blobs.yml)" ]]; then
+    echo "no blob changes to commit for ${src} ${ver}"
+    return 0
+  fi
+
+  # Only set identity if the repository has none, so a developer's own
+  # config is left alone.
+  [[ -n "$(git config user.email)" ]] || \
+    git config user.email "${GIT_EMAIL:?GIT_EMAIL required to commit}"
+  [[ -n "$(git config user.name)" ]] || \
+    git config user.name "${GIT_NAME:?GIT_NAME required to commit}"
+
+  git add config/blobs.yml
+  git commit -q -m "Bump ${src} to ${ver}"
+  echo "committed: Bump ${src} to ${ver}"
+}
+
+# URL mode's escape hatch: add exactly one asset, leaving the sibling
+# platforms' blobs alone. Going through install() would first drop every
+# blob for the source, stripping a release down to whatever single file
+# the URL happened to point at.
+install_one() {  # install_one <source> <file>
+  local src="${1:?}" file="${2:?}" blobdir name
+
+  [[ -f "$file" ]] || { echo >&2 "no such asset: $file"; return 1; }
+
+  blobdir=$(source_var "$src" BLOBDIR)
+  [[ -n "${blobdir// }" ]] || {
+    echo >&2 "unknown source '$src' (no BLOBDIR declared in blobs.mk)"
+    return 1
+  }
+  name=$(basename "$file")
+
+  trap drop_private_yml EXIT
+  write_private_yml
+
+  # Replace only this exact blob, if it is already present.
+  if spruce json config/blobs.yml | jq -e \
+      --arg k "${blobdir}/${name}" 'has($k)' >/dev/null; then
+    bosh remove-blob "${blobdir}/${name}"
+  fi
+
+  bosh add-blob "$file" "${blobdir}/${name}"
+  bosh -n upload-blobs
+  drop_private_yml
+  trap - EXIT
+}
+
+fetch() {  # fetch <source> [<ref>]
+  local src="${1:?}" ref="${2:-}" tag ver dir
+  command -v gh >/dev/null || { echo >&2 "gh is required for REF mode"; exit 2; }
+
+  if [[ -z "$ref" ]]; then
+    tag=$(latest_tag "$src")
+  else
+    tag=$(resolve_tag "$src" "$ref") || return 1
+  fi
+  ver=$(normalize "$tag")
+
+  dir=$(mktemp -d)
+  echo "fetching $src $tag into $dir"
+  gh release download "$tag" \
+    --repo "$(source_var "$src" REPO)" \
+    --dir "$dir" \
+    --pattern '*' --clobber
+
+  install "$src" "$dir" "$ver"
+  rm -rf "$dir"
+}
+
+fetch_url() {  # fetch_url <source> <url>
+  local src="${1:?}" url="${2:?}" dir
+  dir=$(mktemp -d)
+  echo "fetching $url into $dir"
+  curl -fsSL -o "$dir/$(basename "$url")" "$url"
+  install_one "$src" "$dir/$(basename "$url")"
+  rm -rf "$dir"
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    normalize)   normalize "$@" ;;
+    asset-name)  asset_name "$@" ;;
+    dir-version) dir_version "$@" ;;
+    verify)      verify "$@" ;;
+    install)     install "$@" ;;
+    install-one) install_one "$@" ;;
+    resolve-tag) resolve_tag "$@" ;;
+    fetch)       fetch "$@" ;;
+    fetch-url)   fetch_url "$@" ;;
+    *)
+      echo >&2 "usage: blobs <subcommand> [args]"
+      echo >&2 "  normalize <ref>                    strip a v- or v prefix"
+      echo >&2 "  asset-name <src> <ver> <os> <arch> build an asset filename"
+      echo >&2 "  dir-version <dir>                  read the version file"
+      echo >&2 "  verify <src> <dir> <ver>           check required platforms"
+      echo >&2 "  install <src> <dir> <ver>          replace a source's blobs"
+      echo >&2 "  install-one <src> <file>           add or replace one blob"
+      echo >&2 "  resolve-tag <src> <ref>            find the release tag"
+      echo >&2 "  fetch <src> [<ref>]                download a release"
+      echo >&2 "  fetch-url <src> <url>              download a single asset"
+      exit 2 ;;
+  esac
+}
+
+main "$@"
