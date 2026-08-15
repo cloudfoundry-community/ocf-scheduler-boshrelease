@@ -24,62 +24,9 @@ name: ocf-scheduler
 
 # The version is replaced with the dev release under test. The entry must
 # exist for the ops file's `path: /releases/name=ocf-scheduler` to resolve.
+
 releases:
 - name: ocf-scheduler
-  version: latest
-
-# ubuntu-jammy is the only stemcell uploaded to thunderdome (verified
-# 2026-07-29: bosh-vsphere-esxi-ubuntu-jammy-go_agent/1.1298, the sole
-# entry). Revisit when noble is available there.
-stemcells:
-- alias: default
-  os: ubuntu-jammy
-  version: latest
-
-update:
-  canaries: 1
-  max_in_flight: 1
-  canary_watch_time: 5000-60000
-  update_watch_time: 5000-60000
-
-instance_groups:
-- name: ocf-scheduler
-  azs: [z1]
-  instances: 1
-  stemcell: default
-  vm_type: default
-  networks:
-  - name: default
-  jobs:
-  - name: scheduler
-    release: ocf-scheduler
-    properties:
-      scheduler:
-        cf:
-          api: ((cf_api))
-        uaa:
-          endpoint: ((uaa_endpoint))
-          client_id: ((uaa_client_id))
-          client_secret: ((uaa_client_secret))
-        postgres:
-          uri: ((postgres_uri))
-
-# lifecycle belongs on the instance group, which is where BOSH reads it.
-- name: smoke-tests
-  azs: [z1]
-  lifecycle: errand
-  instances: 1
-  stemcell: default
-  vm_type: default
-  networks:
-  - name: default
-  jobs:
-  - name: smoke-tests
-    release: ocf-scheduler
-    properties:
-      cf:
-        api: ((cf_api))
-        username: ((cf_username))
-        password: ((cf_password))
-        organization: ((cf_organization))
-        space: ((cf_space))
+  sha1: 168c8f37fe0f040d46c0cdc38c14324936e52fe2
+  url: https://github.com/cloudfoundry-community/ocf-scheduler-boshrelease/releases/download/v2.0.0/ocf-scheduler-2.0.0.tgz
+  version: 2.0.0
