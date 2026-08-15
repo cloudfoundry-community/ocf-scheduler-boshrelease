@@ -6,6 +6,7 @@ groups:
   - testflight
   - rc
   - shipit
+  - shipit-manual
 - name: versioning
   jobs:
   - major
@@ -210,6 +211,68 @@ jobs:
       tag:    gh/tag
       body:   gh/notes.md
       globs: [gh/artifacts/*]
+  - put: version-bump-patch
+    resource: version
+    params:
+      bump: patch
+
+# Same as shipit, minus the testflight -> rc gate. testflight cannot pass in
+# this environment (its manifest needs a Postgres URI and a UAA client the test
+# environment does not provide), and a final release can only be cut where the
+# blobstore credentials resolve -- which is here, not on a workstation.
+- name: shipit-manual
+  public: false
+  serial: true
+  plan:
+  - in_parallel:
+    - get: version
+      params:
+        bump: final
+    - get: git
+  - task: release
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: registry.ops.scalecf.net/genesis-community/concourse
+      inputs:
+      - name: version
+      - name: git
+      outputs:
+      - name: gh
+      - name: pushme
+      - name: notifications
+      run:
+        path: ./git/ci/scripts/shipit
+        args: []
+      params:
+        REPO_ROOT:    git
+        VERSION_FROM: version/number
+        RELEASE_ROOT: gh
+        REPO_OUT:     pushme
+        NOTIFICATION_OUT: notifications
+        BRANCH:         main
+        GITHUB_OWNER:   (( grab meta.github.owner ))
+        GIT_EMAIL:      (( grab meta.git.email ))
+        GIT_NAME:       (( grab meta.git.name ))
+        AWS_ACCESS_KEY: (( grab meta.aws.access ))
+        AWS_SECRET_KEY: (( grab meta.aws.secret ))
+  - put: upload-git
+    resource: git
+    params:
+      rebase: true
+      repository: pushme
+  - put: github-release
+    resource: (( grab meta.name ))
+    params:
+      name:   gh/name
+      tag:    gh/tag
+      body:   gh/notes.md
+      globs: [gh/artifacts/*]
+  # Without this the version resource stays at the version just cut, and
+  # bump: final on an already-final version is a no-op -- so the next run
+  # would cut the same version again. shipit ends the same way.
   - put: version-bump-patch
     resource: version
     params:
