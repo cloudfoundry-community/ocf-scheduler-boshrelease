@@ -19,6 +19,10 @@
 #
 # It does NOT inject `azs` or the stemcell, so both are declared here and
 # have to match the target director.
+#
+# testflight only checks that the release deploys and starts; it runs no
+# errands and talks to no Cloud Foundry. The scheduler contacts CF and UAA
+# only when serving requests, so their settings below are placeholders.
 
 name: ocf-scheduler
 
@@ -63,11 +67,11 @@ instance_groups:
     properties:
       scheduler:
         cf:
-          api: ((cf_api))
+          api: https://api.example.invalid
         uaa:
-          endpoint: ((uaa_endpoint))
-          client_id: ((uaa_client_id))
-          client_secret: ((uaa_client_secret))
+          endpoint: https://uaa.example.invalid
+          client_id: placeholder
+          client_secret: placeholder
         postgres:
           uri: postgres://scheduler:scheduler@127.0.0.1:5432/scheduler?sslmode=disable
 
@@ -99,8 +103,8 @@ instance_groups:
     release: ocf-scheduler
     properties:
       cf:
-        api: ((cf_api))
-        username: ((cf_username))
-        password: ((cf_password))
-        organization: ((cf_organization))
-        space: ((cf_space))
+        api: https://api.example.invalid
+        username: placeholder
+        password: placeholder
+        organization: placeholder
+        space: placeholder
