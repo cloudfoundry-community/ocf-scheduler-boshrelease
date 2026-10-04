@@ -26,3 +26,6 @@ properties:
   scheduler.log_level:
     description: "Log level trace, debug, info, warn, error, fatal, panic"
     default: "info"
+  scheduler.min_interval:
+    description: "Shortest allowed gap between a schedule's runs, as a Go duration (eg. 5m); schedules that run more often are rejected. Empty or 0 is off"
+    default: ""
