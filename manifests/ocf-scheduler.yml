@@ -29,6 +29,10 @@ releases:
   sha1: 168c8f37fe0f040d46c0cdc38c14324936e52fe2
   url: https://github.com/cloudfoundry-community/ocf-scheduler-boshrelease/releases/download/v2.0.0/ocf-scheduler-2.0.0.tgz
   version: 2.0.0
+- name: postgres
+  sha1: 84ca2cd0773d2bcb92872773a330a5c087d9eebb
+  url: https://bosh.io/d/github.com/cloudfoundry/postgres-release?v=51
+  version: "51"
 
 # ubuntu-jammy is the only stemcell uploaded to thunderdome (verified
 # 2026-07-29: bosh-vsphere-esxi-ubuntu-jammy-go_agent/1.1298, the sole
@@ -50,6 +54,7 @@ instance_groups:
   instances: 1
   stemcell: default
   vm_type: default
+  persistent_disk_type: default
   networks:
   - name: default
   jobs:
@@ -64,7 +69,21 @@ instance_groups:
           client_id: ((uaa_client_id))
           client_secret: ((uaa_client_secret))
         postgres:
-          uri: ((postgres_uri))
+          uri: postgres://scheduler:scheduler@127.0.0.1:5432/scheduler?sslmode=disable
+
+  # Colocated Postgres, as in the Genesis kit's default (no
+  # external-postgres feature). Throwaway test data, so the credentials
+  # are fixed rather than generated.
+  - name: postgres
+    release: postgres
+    properties:
+      databases:
+        port: 5432
+        roles:
+        - name: scheduler
+          password: scheduler
+        databases:
+        - name: scheduler
 
 # lifecycle belongs on the instance group, which is where BOSH reads it.
 - name: smoke-tests
