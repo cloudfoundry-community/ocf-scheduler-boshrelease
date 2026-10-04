@@ -6,7 +6,8 @@
 # If we use `spruce merge` to do the job, the entire manifest will be reordered -
 # keys will be sorted alphabetically. Comments will be lost.
 #
-# Instead, we assume that "releases:" is the last section of the manifest.
+# Instead, only the "releases:" block is replaced; the rest of the file
+# is copied through as it is.
 set -e
 
 NAME=$1
@@ -33,8 +34,8 @@ fi
 # But, I don't want to just use `spruce merge` for this as it will reorder the manifest and
 # make it ugly. If I didn't care about the manifest's aesthetics then this whole script
 # would be simpler. I want the original layout of the manifest to be retained; and so
-# we will just chomp out the original "releases:" section at the end of the file and
-# paste in the updated releases section.
+# we will just cut out the original "releases:" block and paste in the
+# updated one where it was.
 function bump_version {
   manifest_path=$1
   releases_updated=$(spruce merge <<YAML
@@ -46,13 +47,14 @@ releases: $(spruce json "$manifest_path" | jq --arg name $NAME --arg version $VE
 )
 YAML
 )
-  releases_line_number=$(awk '/^releases:/{ print NR; exit }' $manifest_path)
-  manifest_head=$(head -n `expr $releases_line_number - 1` $manifest_path)
-  cat > $manifest_path <<YAML
-${manifest_head}
-
-${releases_updated}
-YAML
+  # The block ends at the next line that starts in column 0 and is not a
+  # list item: the next key or a comment above it.
+  RELEASES="$releases_updated" awk '
+    /^releases:/     { print ENVIRON["RELEASES"]; skip = 1; next }
+    skip && /^[^ -]/ { skip = 0; print "" }
+    !skip
+  ' "$manifest_path" > "$manifest_path.new"
+  mv "$manifest_path.new" "$manifest_path"
 }
 
 for manifest_path in $(ls manifests/*.yml); do

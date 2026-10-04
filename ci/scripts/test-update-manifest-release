@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# ci/scripts/test-update-manifest-release
+#
+# Tests for ci/scripts/update-manifest-release and
+# update-manifest-compiled-release, which shipit and use-compiled-releases
+# run against every manifests/*.yml. Both used to keep only the lines
+# above "releases:" and drop everything after the new releases block, so
+# a manifest with any section below releases lost it on each release.
+#
+# Runs offline; needs spruce and jq.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1"
+    echo "       expected: $2"
+    echo "       actual:   $3"
+    fails=$((fails + 1))
+  fi
+}
+
+# A manifest with sections and comments on both sides of releases.
+write_manifest() {  # write_manifest <dir>
+  mkdir -p "$1/manifests"
+  cat > "$1/manifests/test.yml" <<'YAML'
+---
+# header comment
+name: test
+
+releases:
+- name: test
+  version: latest
+- name: other
+  version: 1.0.0
+
+# stemcell comment
+stemcells:
+- alias: default
+  os: ubuntu-jammy
+  version: latest
+
+instance_groups:
+- name: test
+  instances: 1
+YAML
+}
+
+run() {  # run <script> <dir> <args...>
+  local script=$1 d=$2
+  shift 2
+  ( cd "$d" && REPO_ROOT="$d" REPO_OUT="$d" "${HERE}/${script}" "$@" )
+}
+
+json() { spruce json "$1/manifests/test.yml"; }
+
+for script in update-manifest-release update-manifest-compiled-release; do
+  d=$(mktemp -d)
+  write_manifest "$d"
+  args=(test 2.1.0 https://example.com/test-2.1.0.tgz abc123)
+  [[ $script == update-manifest-compiled-release ]] && args+=(ubuntu-jammy 1.1298)
+
+  run "$script" "$d" "${args[@]}"
+  check "$script: instance_groups kept" \
+    "test" "$(json "$d" | jq -r '.instance_groups[0].name')"
+  check "$script: stemcells kept" \
+    "ubuntu-jammy" "$(json "$d" | jq -r '.stemcells[0].os')"
+  check "$script: comment below releases kept" \
+    "1" "$(grep -c '^# stemcell comment$' "$d/manifests/test.yml")"
+  check "$script: target release bumped" \
+    "2.1.0 abc123" "$(json "$d" | jq -r '.releases[] | select(.name=="test") | "\(.version) \(.sha1)"')"
+  check "$script: other release untouched" \
+    "1.0.0" "$(json "$d" | jq -r '.releases[] | select(.name=="other").version')"
+
+  first=$(cat "$d/manifests/test.yml")
+  run "$script" "$d" "${args[@]}"
+  check "$script: second run changes nothing" \
+    "$first" "$(cat "$d/manifests/test.yml")"
+  rm -rf "$d"
+done
+
+if [[ $fails -gt 0 ]]; then
+  echo "${fails} failed"
+  exit 1
+fi
+echo "all passed"
