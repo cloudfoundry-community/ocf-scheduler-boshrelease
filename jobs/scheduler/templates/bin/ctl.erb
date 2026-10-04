@@ -15,6 +15,7 @@ case $1 in
   (start)
     echo -n "Starting Scheduler PID: $$"
     echo $$ > $SCHEDULER_PID
+    mkdir -p "${STORE_PATH}" && chown vcap:vcap "${STORE_PATH}"
     [ -f "${TIMEZONE_PATH}" ] || {
       touch "${TIMEZONE_PATH}" && chown "vcap:vcap" "${TIMEZONE_PATH}";
     }
