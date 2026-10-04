@@ -100,13 +100,10 @@ if [[ "$found" == "no" ]]; then
   echo "  until one exists."
 fi
 
-header "still needed by hand"
+header "manifest settings"
 cat <<'EOS'
-  scheduler.postgres.uri          no postgres job ships in this release
-  scheduler.uaa.client_id         a UAA client on the CF above
-  scheduler.uaa.client_secret     the same client's secret
-
-  Once known, set them as MANIFEST_VARS in ci/pipeline.yml. Values may
-  be written key=value or "key: value"; a value carrying its own '='
-  (a postgres query string) is now preserved.
+  manifests/ocf-scheduler.yml needs no MANIFEST_VARS: Postgres runs on
+  the scheduler VM, and CF and UAA settings are placeholders because
+  testflight runs no errands and the scheduler only contacts them when
+  serving requests.
 EOS
