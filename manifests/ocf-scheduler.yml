@@ -21,8 +21,10 @@
 # have to match the target director.
 #
 # testflight only checks that the release deploys and starts; it runs no
-# errands and talks to no Cloud Foundry. The scheduler contacts CF and UAA
-# only when serving requests, so their settings below are placeholders.
+# errands. The scheduler reads the CF API root at startup to find UAA, so
+# cf.api has to be a real, reachable API: thunderdome's CF. The client
+# credentials and the smoke-tests login are placeholders; nothing uses
+# them until the scheduler serves a request or the errand runs.
 
 name: ocf-scheduler
 
@@ -67,9 +69,9 @@ instance_groups:
     properties:
       scheduler:
         cf:
-          api: https://api.example.invalid
+          api: https://api.system.cf.thunderdome.lab.scalecf.net
         uaa:
-          endpoint: https://uaa.example.invalid
+          endpoint: https://uaa.system.cf.thunderdome.lab.scalecf.net
           client_id: placeholder
           client_secret: placeholder
         postgres:
@@ -103,7 +105,7 @@ instance_groups:
     release: ocf-scheduler
     properties:
       cf:
-        api: https://api.example.invalid
+        api: https://api.system.cf.thunderdome.lab.scalecf.net
         username: placeholder
         password: placeholder
         organization: placeholder
