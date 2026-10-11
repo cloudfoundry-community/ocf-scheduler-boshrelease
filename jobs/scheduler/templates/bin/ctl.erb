@@ -20,8 +20,8 @@ case $1 in
       touch "${TIMEZONE_PATH}" && chown "vcap:vcap" "${TIMEZONE_PATH}";
     }
 
-    chpst -u vcap:vcap /var/vcap/packages/scheduler/bin/tzlist --json >> ${LOG_FILE} 2>&1 
-    exec chpst -u vcap:vcap /var/vcap/packages/scheduler/bin/scheduler \
+    setpriv --reuid=vcap --regid=vcap --groups=vcap -- /var/vcap/packages/scheduler/bin/tzlist --json >> ${LOG_FILE} 2>&1 
+    exec setpriv --reuid=vcap --regid=vcap --groups=vcap -- /var/vcap/packages/scheduler/bin/scheduler \
       >> ${LOG_FILE} 2>&1 
     ;;
   (stop)

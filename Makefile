@@ -27,6 +27,7 @@ test:
 	./ci/scripts/test-packaging
 	./ci/scripts/test-manifest-vars
 	./ci/scripts/test-testflight-cleanup
+	./ci/scripts/test-ctl-template
 
 # Read-only. Reports what manifests/ocf-scheduler.yml must be written
 # against, and what testflight injects on its own.

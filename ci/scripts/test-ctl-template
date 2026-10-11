@@ -1,0 +1,39 @@
+#!/bin/bash
+#
+# ci/scripts/test-ctl-template
+#
+# The Resolute stemcell ships without runit, so the scheduler ctl script
+# must not call chpst. It drops privileges with setpriv from util-linux.
+# Runs offline: the template is rendered with ERB and inspected as text.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="${HERE}/../../jobs/scheduler/templates/bin/ctl.erb"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected '$2', got '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+rendered="$(ruby -rerb -e 'puts ERB.new(File.read(ARGV[0])).result' "${TEMPLATE}")"
+
+check "no chpst in rendered ctl" "0" "$(grep -c 'chpst' <<<"${rendered}")"
+check "no runit commands in rendered ctl" "0" "$(grep -cE '\b(runsv|runsvdir|sv)\b' <<<"${rendered}")"
+check "tzlist drops privileges with setpriv" "1" \
+  "$(grep -c 'setpriv --reuid=vcap --regid=vcap --groups=vcap -- /var/vcap/packages/scheduler/bin/tzlist' <<<"${rendered}")"
+check "scheduler execs through setpriv" "1" \
+  "$(grep -c 'exec setpriv --reuid=vcap --regid=vcap --groups=vcap -- /var/vcap/packages/scheduler/bin/scheduler' <<<"${rendered}")"
+check "rendered ctl is valid bash" "0" "$(bash -n <<<"${rendered}" >/dev/null 2>&1; echo $?)"
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} test(s) failed"
+  exit 1
+fi
+echo "all tests passed"
