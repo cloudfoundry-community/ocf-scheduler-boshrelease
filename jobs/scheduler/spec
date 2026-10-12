@@ -29,3 +29,16 @@ properties:
   scheduler.min_interval:
     description: "Shortest allowed gap between a schedule's runs, as a Go duration (eg. 5m); schedules that run more often are rejected. Empty or 0 is off"
     default: ""
+  scheduler.broker.enabled:
+    description: "Serve the Open Service Broker API under /v2. When true, username, password, and api_url are required"
+    default: false
+  scheduler.broker.username:
+    description: "Basic auth user that Cloud Controller sends to the broker"
+    default: scheduler-broker
+  scheduler.broker.password:
+    description: "Basic auth password that Cloud Controller sends to the broker. Required when the broker is enabled"
+  scheduler.broker.api_url:
+    description: "Absolute http or https URL of the scheduler API that binding credentials carry. Required when the broker is enabled"
+  scheduler.broker.require_binding:
+    description: "Refuse job and call creation for apps that are not bound to a scheduler service instance. Requires the broker to be enabled"
+    default: false

@@ -1,0 +1,68 @@
+#!/bin/bash
+#
+# ci/scripts/test-env-template
+#
+# The scheduler reads its broker settings from environment variables, and
+# the env template must export them only when the broker is enabled.
+# Runs offline: the template is rendered with ERB and inspected as text.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE="${HERE}/../../jobs/scheduler/templates/env.erb"
+fails=0
+
+check() {  # check <description> <expected> <actual>
+  if [[ "$2" == "$3" ]]; then
+    echo "ok   - $1"
+  else
+    echo "FAIL - $1: expected '$2', got '$3'"
+    fails=$((fails + 1))
+  fi
+}
+
+# render <enabled> <require_binding>
+render() {
+  ruby -rerb -e '
+    def p(name)
+      {
+        "scheduler.uaa.client_id" => "id",
+        "scheduler.uaa.client_secret" => "secret",
+        "scheduler.uaa.endpoint" => "https://uaa.example.com",
+        "scheduler.postgres.uri" => "postgres://u:p@h:5432/d",
+        "scheduler.cf.api" => "https://api.example.com",
+        "scheduler.workers" => 20,
+        "scheduler.log_level" => "info",
+        "scheduler.min_interval" => "",
+        "scheduler.broker.enabled" => ARGV[1] == "true",
+        "scheduler.broker.username" => "scheduler-broker",
+        "scheduler.broker.password" => "pw",
+        "scheduler.broker.api_url" => "https://scheduler.example.com",
+        "scheduler.broker.require_binding" => ARGV[2] == "true",
+      }.fetch(name)
+    end
+    puts ERB.new(File.read(ARGV[0]), trim_mode: "-").result(binding)
+  ' "${TEMPLATE}" "$1" "$2"
+}
+
+off="$(render false false)"
+check "broker off renders no broker variables" "0" "$(grep -c 'SCHEDULER_BROKER' <<<"${off}")"
+check "broker off still renders DATABASE_URL" "1" "$(grep -c '^export DATABASE_URL=' <<<"${off}")"
+
+on="$(render true false)"
+check "broker on exports the enabled flag" "1" "$(grep -c '^export SCHEDULER_BROKER_ENABLED="true"$' <<<"${on}")"
+check "broker on exports the username" "1" "$(grep -c '^export SCHEDULER_BROKER_USERNAME="scheduler-broker"$' <<<"${on}")"
+check "broker on exports the password" "1" "$(grep -c '^export SCHEDULER_BROKER_PASSWORD="pw"$' <<<"${on}")"
+check "broker on exports the API URL" "1" "$(grep -c '^export SCHEDULER_BROKER_API_URL="https://scheduler.example.com"$' <<<"${on}")"
+check "require_binding false is exported as false" "1" "$(grep -c '^export SCHEDULER_BROKER_REQUIRE_BINDING="false"$' <<<"${on}")"
+
+bound="$(render true true)"
+check "require_binding true is exported as true" "1" "$(grep -c '^export SCHEDULER_BROKER_REQUIRE_BINDING="true"$' <<<"${bound}")"
+check "rendered env is valid bash" "0" "$(bash -n <<<"${bound}" >/dev/null 2>&1; echo $?)"
+
+echo
+if (( fails > 0 )); then
+  echo "${fails} test(s) failed"
+  exit 1
+fi
+echo "all tests passed"

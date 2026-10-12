@@ -55,6 +55,11 @@ bosh upload-release https://github.com/cloudfoundry-community/ocf-scheduler-bosh
 | `scheduler.cf.api` | Yes | | Cloud Foundry API endpoint |
 | `scheduler.postgres.uri` | Yes | | PostgreSQL connection URI (`postgres://user:pass@host:port/db`) |
 | `scheduler.workers` | No | `20` | Number of scheduling workers |
+| `scheduler.broker.enabled` | No | `false` | Serve the Open Service Broker API under `/v2` |
+| `scheduler.broker.username` | No | `scheduler-broker` | Basic auth user that Cloud Controller sends to the broker |
+| `scheduler.broker.password` | When the broker is enabled | | Basic auth password that Cloud Controller sends to the broker |
+| `scheduler.broker.api_url` | When the broker is enabled | | Absolute URL of the scheduler API that binding credentials carry |
+| `scheduler.broker.require_binding` | No | `false` | Refuse job and call creation for apps with no scheduler binding. Needs the broker enabled |
 
 #### `smoke-tests` errand
 
