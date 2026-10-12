@@ -1,0 +1,56 @@
+name: ocf-scheduler
+version: 2.2.0
+commit_hash: cda84e1
+uncommitted_changes: false
+jobs:
+- name: scheduler
+  version: f7e3f56d54393ed0652cac11c052163822c9db2a3cfb2e448c10eaf72b10371a
+  fingerprint: f7e3f56d54393ed0652cac11c052163822c9db2a3cfb2e448c10eaf72b10371a
+  sha1: sha256:9ef416ab7d80b1b8d8eb2434d3b60a84ab791d5bcc58034e608ac6745abdcc69
+  packages:
+  - scheduler
+  - scheduler-cf-plugin
+- name: smoke-tests
+  version: d26eb45ae5e11b1f46266dbed17ffd341055a4b1f230592668b844a4d948f31c
+  fingerprint: d26eb45ae5e11b1f46266dbed17ffd341055a4b1f230592668b844a4d948f31c
+  sha1: sha256:687344f7177c8f25a4973185935a280b0c7e9abdd09aae95b69ce93039c9e4f2
+  packages:
+  - smoke-tests
+  - golang-1.27-linux
+  - cf-cli-8-linux
+  - scheduler-cf-plugin
+packages:
+- name: cf-cli-8-linux
+  version: afd6c74232fe4a51bcca5eb3e72821718fa2173f
+  fingerprint: afd6c74232fe4a51bcca5eb3e72821718fa2173f
+  sha1: 743ab1fb9b04aa50f0d62e66dddd1f9c3a97d4d2
+  dependencies: []
+- name: golang-1.27-linux
+  version: 4a5b3ef32c78d96b58195b90b0fd51789f48090991bef36ca5df0af1b3453544
+  fingerprint: 4a5b3ef32c78d96b58195b90b0fd51789f48090991bef36ca5df0af1b3453544
+  sha1: sha256:b61a499d93f11f51281eafcc64c22225dd3964b9e1e72cd6892c8bd9bf04b5b6
+  dependencies: []
+- name: scheduler
+  version: edb4b3dcf4146c0c987881ca0e1fbcb44923cb7c69937c0c520ba3409f241806
+  fingerprint: edb4b3dcf4146c0c987881ca0e1fbcb44923cb7c69937c0c520ba3409f241806
+  sha1: sha256:3966be2c5c5e5a478e1635d262d19b455be485f0a740dd5e75906e341970253d
+  dependencies: []
+- name: scheduler-cf-plugin
+  version: 540a97311702f3d1d371e89e046b0e1bed597eb69d69687aa44a6f4f49ee9d4b
+  fingerprint: 540a97311702f3d1d371e89e046b0e1bed597eb69d69687aa44a6f4f49ee9d4b
+  sha1: sha256:dfdbbb9fe5e0615089378cfb83be456a23b8545e60ed1d379a10b2bf88a75b45
+  dependencies: []
+- name: scheduler-crossbuilds
+  version: 95a0f2c631b6276309ae3cd99accc4a0ff74ba08e6ba8a339bc4db7eebdbe875
+  fingerprint: 95a0f2c631b6276309ae3cd99accc4a0ff74ba08e6ba8a339bc4db7eebdbe875
+  sha1: sha256:bdcc4452e201133b7a7f7746a36d375fbde685b547494e6c3b2e2f7566ab2394
+  dependencies: []
+- name: smoke-tests
+  version: 97b190dcc661faf96950d09880ba189bba12371c0a4c866b1fe07eca6a6aa661
+  fingerprint: 97b190dcc661faf96950d09880ba189bba12371c0a4c866b1fe07eca6a6aa661
+  sha1: sha256:9f2bae1b69a960b4f4a1b3a0c210a3cd1b9223e15e6c199ed09b54004661b0ff
+  dependencies:
+  - golang-1.27-linux
+  - cf-cli-8-linux
+  - scheduler-cf-plugin
+no_compression: false
