@@ -77,6 +77,58 @@ bosh upload-release https://github.com/cloudfoundry-community/ocf-scheduler-bosh
 bosh run-errand smoke-tests
 ```
 
+### Connecting to the Colocated Database
+
+When the deployment colocates the
+[postgres release](https://github.com/cloudfoundry/postgres-release) with
+the `scheduler` job, as `manifests/ocf-scheduler.yml` does, the
+scheduler's database runs on the scheduler VM, and `psql` reaches it from
+there. The database and the user are both named `scheduler`, unless the
+deployment names them differently in `scheduler.postgres.uri`.
+
+1. Open a shell on the scheduler VM, and become root.
+
+   ```shell
+   bosh -d <deployment> ssh scheduler/0
+   sudo -i
+   ```
+
+   Plain `bosh` needs the director's connection settings in the
+   environment, `BOSH_ENVIRONMENT`, `BOSH_CLIENT`, `BOSH_CLIENT_SECRET`,
+   and `BOSH_CA_CERT`, usually by sourcing an env file that sets them.
+   A Genesis deployment can skip that by putting `genesis <environment>`
+   in front, as in `genesis <environment> bosh ssh scheduler/0`, which
+   connects for you.
+
+2. Connect with the `psql` that matches the running server. The postgres
+   release installs one for each PostgreSQL version it supports, under
+   `/var/vcap/packages/postgres-<version>/`, so pick the server's version
+   rather than the first one listed. PostgreSQL listens on port 5432
+   unless the deployment changes it, and then `-p` names the port.
+
+   ```shell
+   /var/vcap/packages/postgres-16/bin/psql -h 127.0.0.1 -U scheduler scheduler
+   ```
+
+   `psql` doesn't ask for a password, because the postgres release
+   trusts every connection made on the VM itself, over its local socket
+   or its loopback address. A connection from anywhere else needs the
+   password.
+
+3. Check where you are before running anything else.
+
+   ```
+   scheduler=# \conninfo
+   ```
+
+A deployment that uses an external PostgreSQL has no database on the
+scheduler VM. Connect to that server the way its operators provide, with
+the database and user from `scheduler.postgres.uri`.
+
+What the database holds, and how to work with it safely, is in the
+scheduler's
+[operator guide](https://github.com/cloudfoundry-community/ocf-scheduler/blob/develop/docs/operator-guide/database-access.md).
+
 ## Packages
 
 | Package | Contents |
